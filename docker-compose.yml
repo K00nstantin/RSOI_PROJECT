@@ -1,0 +1,125 @@
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: program
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U program"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./postgres/scripts/db-v4.sql:/docker-entrypoint-initdb.d/init.sql
+
+  rating:
+    image: rating-service:latest
+    build:
+      context: .
+      dockerfile: cmd/rating/Dockerfile
+    container_name: rating-service
+    ports:
+      - "8050:8050"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: program
+      DB_PASSWORD: test
+      DB_NAME: ratings
+    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./rating"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/manage/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  library:
+    image: library-service:latest
+    build:
+      context: .
+      dockerfile: cmd/library/Dockerfile
+    container_name: library-service
+    ports:
+      - "8060:8060"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: program
+      DB_PASSWORD: test
+      DB_NAME: libraries
+    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./library"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8060/manage/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  reservation:
+    image: reservation-service:latest
+    build:
+      context: .
+      dockerfile: cmd/reservation/Dockerfile
+    container_name: reservation-service
+    ports:
+      - "8070:8070"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rating:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: program
+      DB_PASSWORD: test
+      DB_NAME: reservations
+    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./reservation"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8070/manage/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  gateway:
+    image: gateway-service:latest
+    build:
+      context: .
+      dockerfile: cmd/gateway/Dockerfile
+    container_name: gateway-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      rating:
+        condition: service_healthy
+      library:
+        condition: service_healthy
+      reservation:
+        condition: service_healthy
+    environment:
+      RATING_SERVICE_URL: http://rating:8050
+      LIBRARY_SERVICE_URL: http://library:8060
+      RESERVATION_SERVICE_URL: http://reservation:8070
+    command: ["sh", "-c", "./wait-for.sh rating:8050 library:8060 reservation:8070 -- ./gateway"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/manage/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+volumes:
+  db-data:
+    driver: local

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"RSOI_lab_2/pkg/models"
+	"RSOI_PROJECT/pkg/models"
 	"fmt"
 	"log"
 	"net/http"
@@ -229,28 +229,42 @@ func returnBook(c *gin.Context) {
 }
 
 func seedTestData() {
+	// Реальные UUID из library-service (создаются в seedTestData библиотеки)
+	testLibraryUID := "83575e12-7ce0-48ee-9931-51919ff3c9ee"
+	testBookUID := "f7cdc58f-2caf-4b15-9727-f89dcc629b27"
+
+	// Проверим, существует ли уже библиотека и книга в БД резерваций?
+	// На самом деле они хранятся в другой БД, но нам важно, чтобы вставляемые UUID были валидными.
+	// Поэтому используем эти значения.
+
 	reservations := []models.Reservation{
 		{
-			Username:   "alice",
-			BookUid:    "book1",
-			LibraryUid: "lib1",
-			Status:     "active",
-			StartDate:  time.Now(),
-			TillDate:   time.Now().AddDate(0, 0, 7),
+			ReservationUid: uuid.New().String(),
+			Username:       "alice",
+			BookUid:        testBookUID,
+			LibraryUid:     testLibraryUID,
+			Status:         "RENTED",
+			BookCondition:  "EXCELLENT",
+			StartDate:      time.Now(),
+			TillDate:       time.Now().AddDate(0, 0, 7),
 		},
 		{
-			Username:   "bob",
-			BookUid:    "book2",
-			LibraryUid: "lib2",
-			Status:     "completed",
-			StartDate:  time.Now().AddDate(0, 0, -7),
-			TillDate:   time.Now().AddDate(0, 0, -1),
+			ReservationUid: uuid.New().String(),
+			Username:       "bob",
+			BookUid:        testBookUID,
+			LibraryUid:     testLibraryUID,
+			Status:         "RETURNED",
+			BookCondition:  "GOOD",
+			StartDate:      time.Now().AddDate(0, 0, -7),
+			TillDate:       time.Now().AddDate(0, 0, -1),
 		},
 	}
 
 	for _, res := range reservations {
 		var existing models.Reservation
-		if err := db.Where("username = ? AND book_uid = ?", res.Username, res.BookUid).First(&existing).Error; err != nil {
+		// Проверяем по уникальному reservation_uid, чтобы избежать дубликатов
+		err := db.Where("reservation_uid = ?", res.ReservationUid).First(&existing).Error
+		if err != nil {
 			db.Create(&res)
 		}
 	}

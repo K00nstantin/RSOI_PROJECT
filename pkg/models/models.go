@@ -50,7 +50,7 @@ type Reservation struct {
 	BookUid        string `gorm:"type:uuid;not null"`
 	LibraryUid     string `gorm:"type:uuid;not null"`
 	Status         string `gorm:"size:20;not null"`
-	BookCondition  string `gorm:"size:20"`
+	BookCondition  string `gorm:"size:20"` // Состояние книги на момент выдачи
 	StartDate      time.Time
 	TillDate       time.Time
 	CreatedAt      time.Time

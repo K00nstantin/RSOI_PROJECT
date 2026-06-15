@@ -1,7 +1,7 @@
 package database
 
 import (
-	"RSOI_lab_2/pkg/models"
+	"RSOI_PROJECT/pkg/models"
 	"fmt"
 	"log"
 	"os"

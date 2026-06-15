@@ -1,7 +1,7 @@
 package main
 
 import (
-	"RSOI_lab_2/pkg/models"
+	"RSOI_PROJECT/pkg/models"
 	"fmt"
 	"log"
 	"net/http"

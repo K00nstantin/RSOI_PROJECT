@@ -174,7 +174,6 @@ func createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	// Проверка количества книг на руках и лимита по рейтингу
 	activeReservationsCount := getActiveReservationsCount(username)
 	rating := getUserRating(username)
 	stars, ok := rating["stars"].(float64)
@@ -189,13 +188,11 @@ func createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	// Получаем состояние книги на момент выдачи
 	bookCondition, ok := bookinfo["condition"].(string)
 	if !ok {
-		bookCondition = "EXCELLENT" // Значение по умолчанию
+		bookCondition = "EXCELLENT"
 	}
 
-	// Добавляем состояние книги в запрос
 	requestWithCondition := map[string]interface{}{
 		"bookUid":       request.BookUid,
 		"libraryUid":    request.LibraryUid,
@@ -234,11 +231,8 @@ func createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	// Уменьшаем количество доступных книг в Library Service
 	err = decreaseBookCount(request.LibraryUid, request.BookUid)
 	if err != nil {
-		// Если не удалось уменьшить количество, это критическая ошибка
-		// В реальной системе здесь может быть откат транзакции
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update book availability"})
 		return
 	}
@@ -285,20 +279,17 @@ func returnBookHandler(c *gin.Context) {
 		return
 	}
 
-	// Валидация condition
 	if request.Condition != "EXCELLENT" && request.Condition != "GOOD" && request.Condition != "BAD" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Condition must be EXCELLENT, GOOD, or BAD"})
 		return
 	}
 
-	// Получаем информацию о резервации
 	reservation, err := getReservationInfo(reservationUid, username)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Reservation not found"})
 		return
 	}
 
-	// Парсим даты
 	returnDate, err := time.Parse("2006-01-02", request.Date)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use YYYY-MM-DD"})
@@ -311,13 +302,11 @@ func returnBookHandler(c *gin.Context) {
 		return
 	}
 
-	// Определяем статус: EXPIRED если дата возврата больше till_date
 	status := "RETURNED"
 	if returnDate.After(tillDate) {
 		status = "EXPIRED"
 	}
 
-	// Обновляем статус резервации
 	reqbody, err := json.Marshal(map[string]interface{}{
 		"condition": request.Condition,
 		"date":      request.Date,
@@ -348,7 +337,6 @@ func returnBookHandler(c *gin.Context) {
 		return
 	}
 
-	// Увеличиваем количество доступных книг в Library Service
 	libraryUid := reservation["libraryUid"].(string)
 	bookUid := reservation["bookUid"].(string)
 	err = increaseBookCount(libraryUid, bookUid)
@@ -357,23 +345,19 @@ func returnBookHandler(c *gin.Context) {
 		return
 	}
 
-	// Обновляем рейтинг пользователя
 	bookConditionAtRental, ok := reservation["bookCondition"].(string)
 	if !ok {
-		bookConditionAtRental = "EXCELLENT" // Значение по умолчанию
+		bookConditionAtRental = "EXCELLENT"
 	}
 
-	// Проверяем условия для изменения рейтинга
 	isLate := returnDate.After(tillDate)
 	isConditionWorse := isConditionWorse(bookConditionAtRental, request.Condition)
 	isOnTimeAndGoodCondition := !isLate && !isConditionWorse
 
 	var ratingDelta int
 	if isOnTimeAndGoodCondition {
-		// Увеличиваем на 1 звезду
 		ratingDelta = 1
 	} else {
-		// Уменьшаем на 10 за каждое условие
 		if isLate {
 			ratingDelta -= 10
 		}
@@ -385,7 +369,6 @@ func returnBookHandler(c *gin.Context) {
 	if ratingDelta != 0 {
 		err = adjustUserRating(username, ratingDelta)
 		if err != nil {
-			// Логируем ошибку, но не прерываем процесс возврата
 			log.Printf("Failed to update user rating: %v", err)
 		}
 	}
@@ -602,7 +585,6 @@ func getReservationInfo(reservationUid, username string) (map[string]interface{}
 		return nil, err
 	}
 
-	// Ищем нужную резервацию
 	for _, res := range reservations {
 		if res["reservationUid"] == reservationUid {
 			return res, nil
