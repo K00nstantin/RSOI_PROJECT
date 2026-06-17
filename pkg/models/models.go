@@ -50,9 +50,19 @@ type Reservation struct {
 	BookUid        string `gorm:"type:uuid;not null"`
 	LibraryUid     string `gorm:"type:uuid;not null"`
 	Status         string `gorm:"size:20;not null"`
-	BookCondition  string `gorm:"size:20"` // Состояние книги на момент выдачи
+	BookCondition  string `gorm:"size:20"`
 	StartDate      time.Time
 	TillDate       time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+type User struct {
+	ID           uint   `gorm:"primaryKey"`
+	Username     string `gorm:"size:80;uniqueIndex;not null"`
+	PasswordHash string `gorm:"not null"`
+	Email        string `gorm:"size:255"`
+	Role         string `gorm:"size:20;default:'user'"` // "admin" или "user"
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }

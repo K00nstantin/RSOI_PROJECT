@@ -120,6 +120,30 @@ services:
       retries: 10
       start_period: 40s
 
+  identity:
+    build:
+      context: .
+      dockerfile: cmd/identity/Dockerfile
+    container_name: identity-service
+    ports:
+      - "8040:8040"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: program
+      DB_PASSWORD: test
+      DB_NAME: identity
+    command: ["/usr/local/bin/wait-for.sh", "postgres:5432", "--", "./identity"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8040/manage/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
 volumes:
   db-data:
     driver: local
