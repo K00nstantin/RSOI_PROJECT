@@ -1,0 +1,28 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "postgres/schema/library_service"
+    queries: "postgres/queries/library_service"
+    gen:
+      go:
+        package: "librarydb"
+        out: "internal/librarydb"
+        emit_json_tags: true
+
+  - engine: "postgresql"
+    schema: "postgres/schema/reservation_service"
+    queries: "postgres/queries/reservation_service"
+    gen:
+      go:
+        package: "reservationdb"
+        out: "internal/reservationdb"
+        emit_json_tags: true
+
+  - engine: "postgresql"
+    schema: "postgres/schema/rating_service"
+    queries: "postgres/queries/rating_service"
+    gen:
+      go:
+        package: "ratingdb"
+        out: "internal/ratingdb"
+        emit_json_tags: true
