@@ -45,8 +45,8 @@ func main() {
 
 	server := gin.Default()
 	server.GET("/api/v1/libraries", cfg.getLibraries)
-	// server.GET("/api/v1/libraries/:libraryUid", getLibrary)
-	// server.GET("/api/v1/libraries/:libraryUid/books", getLibraryBooks)
+	//server.GET("/api/v1/libraries/:libraryUid", getLibrary)
+	server.GET("/api/v1/libraries/:libraryUid/books", cfg.getLibraryBooks)
 	// server.GET("/api/v1/libraries/:libraryUid/books/:bookUid", getLibraryBook)
 	// server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/decrease", decreaseBookCount)
 	// server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/increase", increaseBookCount)
@@ -122,4 +122,90 @@ func (cfg *libraryConfig) getLibraries(c *gin.Context) {
 		"items":         resp_lib,
 	})
 
+}
+
+func (cfg *libraryConfig) getLibraryBooks(c *gin.Context) {
+	libraryUid_string := c.Param("libraryUid")
+	libraryUid, err := uuid.Parse(libraryUid_string)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid id",
+			"err":   err,
+		})
+		return
+	}
+	page_str := c.Request.URL.Query().Get("page")
+	page, err := strconv.Atoi(page_str)
+	if err != nil || page < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "wrong page parameter",
+		})
+		return
+	}
+	size_str := c.Request.URL.Query().Get("size")
+	size, err := strconv.Atoi(size_str)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "wrong size parameter",
+		})
+		return
+	}
+
+	show_all_str := c.Request.URL.Query().Get("showAll")
+	show_all := false
+	if show_all_str == "true" {
+		show_all = true
+	}
+
+	rows, err := cfg.queries.GetLibraryBooks(c, libraryUid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err,
+		})
+	}
+
+	type book struct {
+		BookUid        uuid.UUID `json:"bookUid"`
+		Name           string    `json:"name"`
+		Author         string    `json:"author"`
+		Genre          string    `json:"genre"`
+		Condition      string    `json:"condition"`
+		AvaliableCount int32     `json:"avaliableCount"`
+	}
+
+	books := []book{}
+	for _, row := range rows {
+		books = append(books, book{
+			BookUid:        row.BookUid,
+			Name:           row.Name_2,
+			Author:         row.Author.String,
+			Genre:          row.Genre.String,
+			Condition:      row.Condition.String,
+			AvaliableCount: row.AvailableCount,
+		})
+	}
+
+	elems := 0
+	paginated_books := []book{}
+	for i, bk := range books {
+		if i >= (page*size) && i < ((page+1)*size) {
+			if show_all == true {
+				paginated_books = append(paginated_books, bk)
+				elems++
+			} else {
+				if bk.AvaliableCount > 0 {
+					paginated_books = append(paginated_books, bk)
+					elems++
+				}
+			}
+
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"page":          page,
+		"size":          size,
+		"totalelements": elems,
+		"items":         paginated_books,
+	})
 }

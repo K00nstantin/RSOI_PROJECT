@@ -36,7 +36,7 @@ func main() {
 	r := gin.Default()
 
 	r.GET("/api/v1/libraries", cfg.getLibrariesHandler)
-	// r.GET("/api/v1/libraries/:libraryUid/books", getLibraryBooksHandler)
+	r.GET("/api/v1/libraries/:libraryUid/books", cfg.getLibraryBooksHandler)
 	// r.GET("/api/v1/reservations", getReservationsHandler)
 	// r.POST("/api/v1/reservations", createReservationHandler)
 	// r.POST("/api/v1/reservations/:reservationUid/return", returnBookHandler)
@@ -79,6 +79,39 @@ func (cfg *gatewayConfig) getLibrariesHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err,
 		})
+	}
+
+	c.Data(http.StatusOK, "application/json", body)
+}
+
+func (cfg *gatewayConfig) getLibraryBooksHandler(c *gin.Context) {
+	libraryUid := c.Param("libraryUid")
+	other_params := c.Request.URL.RawQuery
+	request_string := cfg.libraryServiceURL + "/api/v1/libraries/" + libraryUid + "/books?" + other_params
+
+	request, err := http.NewRequest("GET", request_string, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to create request",
+		})
+		return
+	}
+
+	resp, err := cfg.client.Do(request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to send request",
+			"err":   err,
+		})
+		return
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to read body",
+			"err":   err,
+		})
+		return
 	}
 
 	c.Data(http.StatusOK, "application/json", body)

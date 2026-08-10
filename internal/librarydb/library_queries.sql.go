@@ -7,6 +7,9 @@ package librarydb
 
 import (
 	"context"
+	"database/sql"
+
+	"github.com/google/uuid"
 )
 
 const getAllLibraries = `-- name: GetAllLibraries :many
@@ -29,6 +32,69 @@ func (q *Queries) GetAllLibraries(ctx context.Context, dollar_1 string) ([]Libra
 			&i.Name,
 			&i.City,
 			&i.Address,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLibraryBooks = `-- name: GetLibraryBooks :many
+SELECT book_id, library_id, available_count, l.id, library_uid, l.name, city, address, b.id, book_uid, b.name, author, genre, condition
+FROM library_books lb
+JOIN library l ON lb.library_id = l.id
+JOIN books b ON lb.book_id = b.id
+WHERE l.library_uid = $1
+`
+
+type GetLibraryBooksRow struct {
+	BookID         sql.NullInt32  `json:"book_id"`
+	LibraryID      sql.NullInt32  `json:"library_id"`
+	AvailableCount int32          `json:"available_count"`
+	ID             int32          `json:"id"`
+	LibraryUid     uuid.UUID      `json:"library_uid"`
+	Name           string         `json:"name"`
+	City           string         `json:"city"`
+	Address        string         `json:"address"`
+	ID_2           int32          `json:"id_2"`
+	BookUid        uuid.UUID      `json:"book_uid"`
+	Name_2         string         `json:"name_2"`
+	Author         sql.NullString `json:"author"`
+	Genre          sql.NullString `json:"genre"`
+	Condition      sql.NullString `json:"condition"`
+}
+
+func (q *Queries) GetLibraryBooks(ctx context.Context, libraryUid uuid.UUID) ([]GetLibraryBooksRow, error) {
+	rows, err := q.db.QueryContext(ctx, getLibraryBooks, libraryUid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetLibraryBooksRow
+	for rows.Next() {
+		var i GetLibraryBooksRow
+		if err := rows.Scan(
+			&i.BookID,
+			&i.LibraryID,
+			&i.AvailableCount,
+			&i.ID,
+			&i.LibraryUid,
+			&i.Name,
+			&i.City,
+			&i.Address,
+			&i.ID_2,
+			&i.BookUid,
+			&i.Name_2,
+			&i.Author,
+			&i.Genre,
+			&i.Condition,
 		); err != nil {
 			return nil, err
 		}
