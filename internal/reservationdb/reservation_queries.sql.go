@@ -9,11 +9,39 @@ import (
 	"context"
 )
 
-const init = `-- name: Init :exec
+const getReservations = `-- name: GetReservations :many
 SELECT id, reservation_uid, username, book_uid, library_uid, status, start_date, till_date FROM reservation
+WHERE username = $1
 `
 
-func (q *Queries) Init(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, init)
-	return err
+func (q *Queries) GetReservations(ctx context.Context, username string) ([]Reservation, error) {
+	rows, err := q.db.QueryContext(ctx, getReservations, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Reservation
+	for rows.Next() {
+		var i Reservation
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReservationUid,
+			&i.Username,
+			&i.BookUid,
+			&i.LibraryUid,
+			&i.Status,
+			&i.StartDate,
+			&i.TillDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

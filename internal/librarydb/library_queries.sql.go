@@ -46,6 +46,43 @@ func (q *Queries) GetAllLibraries(ctx context.Context, dollar_1 string) ([]Libra
 	return items, nil
 }
 
+const getBook = `-- name: GetBook :one
+SELECT id, book_uid, name, author, genre, condition FROM books 
+WHERE book_uid = $1
+`
+
+func (q *Queries) GetBook(ctx context.Context, bookUid uuid.UUID) (Book, error) {
+	row := q.db.QueryRowContext(ctx, getBook, bookUid)
+	var i Book
+	err := row.Scan(
+		&i.ID,
+		&i.BookUid,
+		&i.Name,
+		&i.Author,
+		&i.Genre,
+		&i.Condition,
+	)
+	return i, err
+}
+
+const getLibrary = `-- name: GetLibrary :one
+SELECT id, library_uid, name, city, address FROM library
+WHERE library_uid = $1
+`
+
+func (q *Queries) GetLibrary(ctx context.Context, libraryUid uuid.UUID) (Library, error) {
+	row := q.db.QueryRowContext(ctx, getLibrary, libraryUid)
+	var i Library
+	err := row.Scan(
+		&i.ID,
+		&i.LibraryUid,
+		&i.Name,
+		&i.City,
+		&i.Address,
+	)
+	return i, err
+}
+
 const getLibraryBooks = `-- name: GetLibraryBooks :many
 SELECT book_id, library_id, available_count, l.id, library_uid, l.name, city, address, b.id, book_uid, b.name, author, genre, condition
 FROM library_books lb
