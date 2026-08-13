@@ -218,6 +218,7 @@ func (cfg *libraryConfig) getLibrary(c *gin.Context) {
 			"error": "invalid id",
 			"err":   err,
 		})
+		return
 	}
 	library, err := cfg.queries.GetLibrary(c, libraryUid)
 	if err != nil {

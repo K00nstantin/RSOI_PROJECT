@@ -7,7 +7,84 @@ package reservationdb
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 )
+
+const createReservation = `-- name: CreateReservation :one
+INSERT INTO reservation (reservation_uid, username, book_uid, library_uid, status, start_date, till_date)
+VALUES (gen_random_uuid(), $1, $2, $3, 'RENTED', NOW(), $4)
+RETURNING reservation_uid, status, start_date, till_date
+`
+
+type CreateReservationParams struct {
+	Username   string    `json:"username"`
+	BookUid    uuid.UUID `json:"book_uid"`
+	LibraryUid uuid.UUID `json:"library_uid"`
+	TillDate   time.Time `json:"till_date"`
+}
+
+type CreateReservationRow struct {
+	ReservationUid uuid.UUID `json:"reservation_uid"`
+	Status         string    `json:"status"`
+	StartDate      time.Time `json:"start_date"`
+	TillDate       time.Time `json:"till_date"`
+}
+
+func (q *Queries) CreateReservation(ctx context.Context, arg CreateReservationParams) (CreateReservationRow, error) {
+	row := q.db.QueryRowContext(ctx, createReservation,
+		arg.Username,
+		arg.BookUid,
+		arg.LibraryUid,
+		arg.TillDate,
+	)
+	var i CreateReservationRow
+	err := row.Scan(
+		&i.ReservationUid,
+		&i.Status,
+		&i.StartDate,
+		&i.TillDate,
+	)
+	return i, err
+}
+
+const getActiveReservations = `-- name: GetActiveReservations :many
+SELECT id, reservation_uid, username, book_uid, library_uid, status, start_date, till_date FROM reservation
+WHERE username = $1 AND status = 'RENTED'
+`
+
+func (q *Queries) GetActiveReservations(ctx context.Context, username string) ([]Reservation, error) {
+	rows, err := q.db.QueryContext(ctx, getActiveReservations, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Reservation
+	for rows.Next() {
+		var i Reservation
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReservationUid,
+			&i.Username,
+			&i.BookUid,
+			&i.LibraryUid,
+			&i.Status,
+			&i.StartDate,
+			&i.TillDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const getReservations = `-- name: GetReservations :many
 SELECT id, reservation_uid, username, book_uid, library_uid, status, start_date, till_date FROM reservation

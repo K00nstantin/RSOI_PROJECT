@@ -9,11 +9,14 @@ import (
 	"context"
 )
 
-const init = `-- name: Init :exec
-SELECT id, username, stars FROM rating
+const getUserStars = `-- name: GetUserStars :one
+SELECT stars FROM rating
+WHERE username = $1
 `
 
-func (q *Queries) Init(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, init)
-	return err
+func (q *Queries) GetUserStars(ctx context.Context, username string) (int32, error) {
+	row := q.db.QueryRowContext(ctx, getUserStars, username)
+	var stars int32
+	err := row.Scan(&stars)
+	return stars, err
 }
