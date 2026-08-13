@@ -48,7 +48,7 @@ func main() {
 	server.GET("/api/v1/libraries/:libraryUid", cfg.getLibrary)
 	server.GET("/api/v1/libraries/:libraryUid/books", cfg.getLibraryBooks)
 	server.GET("/api/v1/libraries/:libraryUid/books/:bookUid", cfg.getLibraryBook)
-	// server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/decrease", decreaseBookCount)
+	server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/decrease", cfg.decreaseBookCount)
 	// server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/increase", increaseBookCount)
 	// server.GET("/manage/health", healthCheck)
 
@@ -252,4 +252,48 @@ func (cfg *libraryConfig) getLibraryBook(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, book)
 
+}
+
+func (cfg *libraryConfig) decreaseBookCount(c *gin.Context) {
+	libraryUid_str := c.Param("libraryUid")
+	if libraryUid_str == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"err": "invalid library id",
+		})
+		return
+	}
+	libraryUid, err := uuid.Parse(libraryUid_str)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"err": "invalid library id",
+		})
+		return
+	}
+	bookUid_str := c.Param("bookUid")
+	if bookUid_str == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"err": "invalid book id",
+		})
+		return
+	}
+	bookUid, err := uuid.Parse(bookUid_str)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"err": "invalid book id",
+		})
+		return
+	}
+	params := librarydb.DecreaseBookCountParams{
+		LibraryUid: libraryUid,
+		BookUid:    bookUid,
+	}
+	_, err = cfg.queries.DecreaseBookCount(c, params)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "wrong parameters",
+			"err":   err,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, nil)
 }

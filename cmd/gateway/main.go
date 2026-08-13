@@ -447,6 +447,14 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		})
 		return
 	}
+	err = cfg.decreaseBookCount(req_body.BookUid, req_body.LibraryUid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to decrease book count",
+			"err":   err,
+		})
+		return
+	}
 	response := responseDTO{
 		ReservationUid: resp.Reservation.ReservationUid,
 		Status:         resp.Reservation.Status,
@@ -573,4 +581,21 @@ func (cfg *gatewayConfig) createReservation(c *gin.Context, username string, bod
 	}
 
 	return resp_body, nil
+}
+
+func (cfg *gatewayConfig) decreaseBookCount(book_uuid uuid.UUID, libraryuuid uuid.UUID) error {
+	request_string := cfg.libraryServiceURL + "/api/v1/libraries/" + libraryuuid.String() + "/books/" + book_uuid.String() + "/decrease"
+	request, err := http.NewRequest("POST", request_string, nil)
+	if err != nil {
+		return err
+	}
+	response, err := cfg.client.Do(request)
+	if err != nil {
+		return err
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("could not decrease book count")
+	}
+	return nil
 }

@@ -12,6 +12,27 @@ import (
 	"github.com/google/uuid"
 )
 
+const decreaseBookCount = `-- name: DecreaseBookCount :one
+UPDATE library_books
+SET available_count = available_count - 1
+WHERE library_id = (SELECT id FROM library WHERE library_uid = $1)
+  AND book_id = (SELECT id FROM books WHERE book_uid = $2)
+  AND available_count > 0
+  RETURNING book_id, library_id, available_count
+`
+
+type DecreaseBookCountParams struct {
+	LibraryUid uuid.UUID `json:"library_uid"`
+	BookUid    uuid.UUID `json:"book_uid"`
+}
+
+func (q *Queries) DecreaseBookCount(ctx context.Context, arg DecreaseBookCountParams) (LibraryBook, error) {
+	row := q.db.QueryRowContext(ctx, decreaseBookCount, arg.LibraryUid, arg.BookUid)
+	var i LibraryBook
+	err := row.Scan(&i.BookID, &i.LibraryID, &i.AvailableCount)
+	return i, err
+}
+
 const getAllLibraries = `-- name: GetAllLibraries :many
 SELECT id, library_uid, name, city, address FROM library
 WHERE ($1::text IS NULL OR city = $1)
