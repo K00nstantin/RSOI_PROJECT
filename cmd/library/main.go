@@ -2,8 +2,11 @@ package main
 
 import (
 	"RSOI_PROJECT/internal/librarydb"
+	"RSOI_PROJECT/models"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -49,7 +52,7 @@ func main() {
 	server.GET("/api/v1/libraries/:libraryUid/books", cfg.getLibraryBooks)
 	server.GET("/api/v1/libraries/:libraryUid/books/:bookUid", cfg.getLibraryBook)
 	server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/decrease", cfg.decreaseBookCount)
-	// server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/increase", increaseBookCount)
+	server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/increase", cfg.increaseBookCount)
 	// server.GET("/manage/health", healthCheck)
 
 	log.Println("Library service starting on port:8060")
@@ -296,4 +299,79 @@ func (cfg *libraryConfig) decreaseBookCount(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, nil)
+}
+
+func getCondition(condition string) int {
+	switch condition {
+	case "EXCELLENT":
+		return 3
+	case "GOOD":
+		return 2
+	case "BAD":
+		return 1
+	default:
+		return -1
+	}
+}
+
+func (cfg *libraryConfig) increaseBookCount(c *gin.Context) {
+	bookUidStr := c.Param("bookUid")
+	delta := 0
+	bookUid, err := uuid.Parse(bookUidStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid library id",
+			"err":   err,
+		})
+		return
+	}
+
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to read body",
+			"err":   err,
+		})
+		return
+	}
+	params := models.CloseReservationParams{}
+	if err := json.Unmarshal(body, &params); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to unmarshall",
+			"err":   err,
+		})
+		return
+	}
+	book, err := cfg.queries.GetBook(c, bookUid)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "failed to find book",
+			"err":   err,
+		})
+		return
+	}
+	pre_condition := getCondition(book.Condition.String)
+	post_condition := getCondition(params.Condition)
+	if post_condition < pre_condition {
+		delta -= 10
+	}
+	cond := sql.NullString{
+		String: params.Condition,
+		Valid:  true,
+	}
+	condition_params := librarydb.ChangeBookConditionParams{
+		Condition: cond,
+		BookUid:   bookUid,
+	}
+	err = cfg.queries.ChangeBookCondition(c, condition_params)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to update condition",
+			"err":   err,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"delta": delta,
+	})
 }

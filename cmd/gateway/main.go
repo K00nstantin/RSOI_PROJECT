@@ -2,6 +2,7 @@ package main
 
 import (
 	"RSOI_PROJECT/internal/reservationdb"
+	"RSOI_PROJECT/models"
 	"bytes"
 	"database/sql"
 	"encoding/json"
@@ -82,7 +83,7 @@ func main() {
 	r.GET("/api/v1/libraries/:libraryUid/books", cfg.getLibraryBooksHandler)
 	r.GET("/api/v1/reservations", cfg.getReservationsHandler)
 	r.POST("/api/v1/reservations", cfg.createReservationHandler)
-	// r.POST("/api/v1/reservations/:reservationUid/return", returnBookHandler)
+	r.POST("/api/v1/reservations/:reservationUid/return", cfg.returnBookHandler)
 	// r.GET("/api/v1/rating", getRatingHandler)
 	r.GET("/manage/health", healthCheck)
 
@@ -598,4 +599,83 @@ func (cfg *gatewayConfig) decreaseBookCount(book_uuid uuid.UUID, libraryuuid uui
 		return fmt.Errorf("could not decrease book count")
 	}
 	return nil
+}
+
+func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
+	reservationUid_str := c.Param("reservationUid")
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to read body",
+			"err":   err,
+		})
+		return
+	}
+	body_1 := bytes.NewReader(body)
+	body_2 := bytes.NewReader(body)
+
+	err, bookUid, libraryUid, del := cfg.closeReservation(reservationUid_str, body_1)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to close reservation",
+			"err":   err,
+		})
+		return
+	}
+
+	err, delta := cfg.returnBook(libraryUid, bookUid, body_2, del)
+	if delta == 0 {
+		delta++
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"delta": delta,
+	})
+}
+
+func (cfg *gatewayConfig) closeReservation(reservaton_uuid_str string, io_body io.Reader) (error, uuid.UUID, uuid.UUID, int) {
+	request_str := cfg.reservationServiceURL + "/api/v1/reservations/" + reservaton_uuid_str + "/return"
+	request, err := http.NewRequest("POST", request_str, io_body)
+	if err != nil {
+		return err, uuid.Nil, uuid.Nil, 0
+	}
+	response, err := cfg.client.Do(request)
+	if err != nil {
+		return err, uuid.Nil, uuid.Nil, 0
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err, uuid.Nil, uuid.Nil, 0
+	}
+
+	resp := models.CloseReservationResponse{}
+	err = json.Unmarshal(body, &resp)
+	if err != nil {
+		return err, uuid.Nil, uuid.Nil, 0
+	}
+	return nil, resp.BookUid, resp.LibraryUid, resp.Delta
+
+}
+
+func (cfg *gatewayConfig) returnBook(libraryUid, bookUid uuid.UUID, io_body io.Reader, del int) (error, int) {
+	request_str := cfg.libraryServiceURL + "/api/v1/libraries/" + libraryUid.String() + "/books/" + bookUid.String() + "/increase"
+	request, err := http.NewRequest("POST", request_str, io_body)
+	if err != nil {
+		return err, 0
+	}
+	response, err := cfg.client.Do(request)
+	if err != nil {
+		return err, 0
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err, 0
+	}
+	type delta struct {
+		Delta int
+	}
+	params := delta{}
+	if err = json.Unmarshal(body, &params); err != nil {
+		return err, 0
+	}
+	return nil, params.Delta + del
 }

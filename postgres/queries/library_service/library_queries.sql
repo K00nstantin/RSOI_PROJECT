@@ -24,3 +24,8 @@ WHERE library_id = (SELECT id FROM library WHERE library_uid = $1)
   AND book_id = (SELECT id FROM books WHERE book_uid = $2)
   AND available_count > 0
   RETURNING *;
+
+-- name: ChangeBookCondition :exec
+UPDATE books
+SET condition = $1
+WHERE book_uid = $2;

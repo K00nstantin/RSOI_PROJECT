@@ -12,6 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
+const changeBookCondition = `-- name: ChangeBookCondition :exec
+UPDATE books
+SET condition = $1
+WHERE book_uid = $2
+`
+
+type ChangeBookConditionParams struct {
+	Condition sql.NullString `json:"condition"`
+	BookUid   uuid.UUID      `json:"book_uid"`
+}
+
+func (q *Queries) ChangeBookCondition(ctx context.Context, arg ChangeBookConditionParams) error {
+	_, err := q.db.ExecContext(ctx, changeBookCondition, arg.Condition, arg.BookUid)
+	return err
+}
+
 const decreaseBookCount = `-- name: DecreaseBookCount :one
 UPDATE library_books
 SET available_count = available_count - 1

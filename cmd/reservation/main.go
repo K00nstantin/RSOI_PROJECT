@@ -2,6 +2,7 @@ package main
 
 import (
 	"RSOI_PROJECT/internal/reservationdb"
+	"RSOI_PROJECT/models"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,7 @@ func main() {
 	server.GET("/api/v1/reservations", cfg.getReservations)
 	server.GET("/api/v1/reservations/active/count", cfg.getActiveReservationsCount)
 	server.POST("/api/v1/reservations", cfg.createReservation)
-	// server.POST("/api/v1/reservations/:reservationUid/return", returnBook)
+	server.POST("/api/v1/reservations/:reservationUid/return", cfg.returnBook)
 	// server.GET("/manage/health", healthCheck)
 
 	log.Println("Reservation service starting on :8070")
@@ -135,4 +136,83 @@ func (cfg *reservationConfig) createReservation(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"reservation": row,
 	})
+}
+
+func (cfg *reservationConfig) returnBook(c *gin.Context) {
+	delta := 0
+	type sqlrow struct {
+		BookUid    uuid.UUID `json:"book_uid"`
+		LibraryUid uuid.UUID `json:"library_uid"`
+	}
+	var row sqlrow
+	flag := false
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "error reading body",
+			"err":   err,
+		})
+		return
+	}
+	params := models.CloseReservationParams{}
+	err = json.Unmarshal(body, &params)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "error while unmarshalling",
+			"err":   err,
+		})
+		return
+	}
+	reservationUid := c.Param("reservationUid")
+	id, err := uuid.Parse(reservationUid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "invalid id",
+			"err":   err,
+		})
+		return
+	}
+	reservation, err := cfg.queries.GetReservation(c, id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid parameters",
+			"err":   err,
+		})
+		return
+	}
+
+	if params.Date.After(reservation.TillDate) {
+		delta -= 10
+		flag = true
+		r, err := cfg.queries.SetExpired(c, id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid parameters",
+				"err":   err,
+			})
+			return
+		}
+		row.BookUid = r.BookUid
+		row.LibraryUid = r.LibraryUid
+
+	}
+	if flag == false {
+		delta++
+		r, err := cfg.queries.SetReturned(c, id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid parameters",
+				"err":   err,
+			})
+			return
+		}
+		row.BookUid = r.BookUid
+		row.LibraryUid = r.LibraryUid
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"bookUid":    row.BookUid,
+		"libraryUid": row.LibraryUid,
+		"delta":      delta,
+	})
+
 }

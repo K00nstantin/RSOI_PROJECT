@@ -86,6 +86,27 @@ func (q *Queries) GetActiveReservations(ctx context.Context, username string) ([
 	return items, nil
 }
 
+const getReservation = `-- name: GetReservation :one
+SELECT id, reservation_uid, username, book_uid, library_uid, status, start_date, till_date FROM reservation
+WHERE reservation_uid = $1
+`
+
+func (q *Queries) GetReservation(ctx context.Context, reservationUid uuid.UUID) (Reservation, error) {
+	row := q.db.QueryRowContext(ctx, getReservation, reservationUid)
+	var i Reservation
+	err := row.Scan(
+		&i.ID,
+		&i.ReservationUid,
+		&i.Username,
+		&i.BookUid,
+		&i.LibraryUid,
+		&i.Status,
+		&i.StartDate,
+		&i.TillDate,
+	)
+	return i, err
+}
+
 const getReservations = `-- name: GetReservations :many
 SELECT id, reservation_uid, username, book_uid, library_uid, status, start_date, till_date FROM reservation
 WHERE username = $1
@@ -121,4 +142,42 @@ func (q *Queries) GetReservations(ctx context.Context, username string) ([]Reser
 		return nil, err
 	}
 	return items, nil
+}
+
+const setExpired = `-- name: SetExpired :one
+UPDATE reservation
+SET status = 'EXPIRED'
+WHERE reservation_uid = $1
+RETURNING book_uid, library_uid
+`
+
+type SetExpiredRow struct {
+	BookUid    uuid.UUID `json:"book_uid"`
+	LibraryUid uuid.UUID `json:"library_uid"`
+}
+
+func (q *Queries) SetExpired(ctx context.Context, reservationUid uuid.UUID) (SetExpiredRow, error) {
+	row := q.db.QueryRowContext(ctx, setExpired, reservationUid)
+	var i SetExpiredRow
+	err := row.Scan(&i.BookUid, &i.LibraryUid)
+	return i, err
+}
+
+const setReturned = `-- name: SetReturned :one
+UPDATE reservation
+SET status = 'RETURNED'
+WHERE reservation_uid = $1
+RETURNING book_uid, library_uid
+`
+
+type SetReturnedRow struct {
+	BookUid    uuid.UUID `json:"book_uid"`
+	LibraryUid uuid.UUID `json:"library_uid"`
+}
+
+func (q *Queries) SetReturned(ctx context.Context, reservationUid uuid.UUID) (SetReturnedRow, error) {
+	row := q.db.QueryRowContext(ctx, setReturned, reservationUid)
+	var i SetReturnedRow
+	err := row.Scan(&i.BookUid, &i.LibraryUid)
+	return i, err
 }
