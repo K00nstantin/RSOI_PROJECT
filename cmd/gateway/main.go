@@ -84,7 +84,7 @@ func main() {
 	r.GET("/api/v1/reservations", cfg.getReservationsHandler)
 	r.POST("/api/v1/reservations", cfg.createReservationHandler)
 	r.POST("/api/v1/reservations/:reservationUid/return", cfg.returnBookHandler)
-	// r.GET("/api/v1/rating", getRatingHandler)
+	r.GET("/api/v1/rating", cfg.getRatingHandler)
 	r.GET("/manage/health", healthCheck)
 
 	log.Println("Gateway service starting on port 8080")
@@ -714,4 +714,41 @@ func (cfg *gatewayConfig) returnBook(libraryUid, bookUid uuid.UUID, io_body io.R
 		return err, 0
 	}
 	return nil, params.Delta + del
+}
+
+func (cfg *gatewayConfig) getRatingHandler(c *gin.Context) {
+	username := c.Request.Header.Get("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid username",
+		})
+		return
+	}
+	request_str := cfg.ratingServiceURL + "/api/v1/rating"
+	request, err := http.NewRequest("GET", request_str, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to get rating",
+			"err":   err,
+		})
+		return
+	}
+	request.Header.Add("X-User-Name", username)
+	response, err := cfg.client.Do(request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to make a request",
+			"err":   err,
+		})
+		return
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to read body",
+			"err":   err,
+		})
+		return
+	}
+	c.Data(http.StatusOK, "application/json", body)
 }
