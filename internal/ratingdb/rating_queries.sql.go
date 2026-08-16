@@ -20,3 +20,19 @@ func (q *Queries) GetUserStars(ctx context.Context, username string) (int32, err
 	err := row.Scan(&stars)
 	return stars, err
 }
+
+const updateRating = `-- name: UpdateRating :exec
+UPDATE rating
+SET stars = stars + $1
+WHERE username = $2
+`
+
+type UpdateRatingParams struct {
+	Stars    int32  `json:"stars"`
+	Username string `json:"username"`
+}
+
+func (q *Queries) UpdateRating(ctx context.Context, arg UpdateRatingParams) error {
+	_, err := q.db.ExecContext(ctx, updateRating, arg.Stars, arg.Username)
+	return err
+}

@@ -603,6 +603,13 @@ func (cfg *gatewayConfig) decreaseBookCount(book_uuid uuid.UUID, libraryuuid uui
 
 func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
 	reservationUid_str := c.Param("reservationUid")
+	username := c.Request.Header.Get("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid username",
+		})
+		return
+	}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -627,9 +634,38 @@ func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
 	if delta == 0 {
 		delta++
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"delta": delta,
+
+	update_request_string := cfg.ratingServiceURL + "/api/v1/rating"
+	update_body, err := json.Marshal(gin.H{
+		"stars":    delta,
+		"username": username,
 	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to marshall",
+			"err":   err,
+		})
+		return
+	}
+
+	update_request, err := http.NewRequest("PUT", update_request_string, bytes.NewReader(update_body))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to create request",
+			"err":   err,
+		})
+		return
+	}
+	_, err = cfg.client.Do(update_request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to make a request",
+			"err":   err,
+		})
+		return
+	}
+	c.JSON(http.StatusNoContent, nil)
+
 }
 
 func (cfg *gatewayConfig) closeReservation(reservaton_uuid_str string, io_body io.Reader) (error, uuid.UUID, uuid.UUID, int) {

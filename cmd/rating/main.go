@@ -3,7 +3,9 @@ package main
 import (
 	"RSOI_PROJECT/internal/ratingdb"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -39,8 +41,7 @@ func main() {
 
 	server := gin.Default()
 	server.GET("/api/v1/rating", cfg.getRating)
-	// server.PUT("/api/v1/rating", updateRating)
-	// server.POST("/api/v1/rating/adjust", adjustRating)
+	server.PUT("/api/v1/rating", cfg.updateRating)
 	// server.GET("/manage/health", healthCheck)
 
 	log.Println("Rating service starting on :8050")
@@ -69,4 +70,43 @@ func (cfg *ratingConfig) getRating(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"stars": int(stars),
 	})
+}
+
+func (cfg *ratingConfig) updateRating(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to read body",
+			"err":   err,
+		})
+		return
+	}
+	params := ratingdb.UpdateRatingParams{}
+	if err = json.Unmarshal(body, &params); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to unmarshall",
+			"err":   err,
+		})
+		return
+	}
+	stars, err := cfg.queries.GetUserStars(c, params.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to get rating",
+			"err":   err,
+		})
+		return
+	}
+	if stars+params.Stars > 100 {
+		params.Stars = 100 - stars
+	}
+
+	if err = cfg.queries.UpdateRating(c, params); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to update rating",
+			"err":   err,
+		})
+		return
+	}
+
 }
