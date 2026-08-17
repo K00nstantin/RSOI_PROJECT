@@ -68,7 +68,6 @@ func (cfg *libraryConfig) getLibraries(c *gin.Context) {
 
 	libraries, err := cfg.queries.GetAllLibraries(c, city)
 	if err != nil {
-		fmt.Println("error")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err,
 		})
@@ -82,9 +81,10 @@ func (cfg *libraryConfig) getLibraries(c *gin.Context) {
 		})
 		return
 	}
+	page--
 
 	size, err := strconv.Atoi(size_str)
-	if err != nil || size <= 0 {
+	if err != nil || size < 1 || size > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "bad_query_params",
 		})
@@ -92,24 +92,16 @@ func (cfg *libraryConfig) getLibraries(c *gin.Context) {
 	}
 
 	resp_page := []librarydb.Library{}
-	elems := 0
+	totalElems := len(libraries)
 	for i, lib := range libraries {
 		if i >= (page*size) && i < ((page+1)*size) {
 			resp_page = append(resp_page, lib)
-			elems++
 		}
 	}
 
-	type lib struct {
-		LibraryUid uuid.UUID `json:"library_uid"`
-		Name       string    `json:"name"`
-		City       string    `json:"city"`
-		Address    string    `json:"address"`
-	}
-
-	resp_lib := []lib{}
+	resp_lib := []models.Library{}
 	for _, rlib := range resp_page {
-		resp_lib = append(resp_lib, lib{
+		resp_lib = append(resp_lib, models.Library{
 			LibraryUid: rlib.LibraryUid,
 			Name:       rlib.Name,
 			City:       rlib.City,
@@ -121,7 +113,7 @@ func (cfg *libraryConfig) getLibraries(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"page":          page,
 		"pageSize":      size,
-		"totalElements": elems,
+		"totalElements": totalElems,
 		"items":         resp_lib,
 	})
 
@@ -145,6 +137,7 @@ func (cfg *libraryConfig) getLibraryBooks(c *gin.Context) {
 		})
 		return
 	}
+	page--
 	size_str := c.Request.URL.Query().Get("size")
 	size, err := strconv.Atoi(size_str)
 	if err != nil {
@@ -167,18 +160,9 @@ func (cfg *libraryConfig) getLibraryBooks(c *gin.Context) {
 		})
 	}
 
-	type book struct {
-		BookUid        uuid.UUID `json:"bookUid"`
-		Name           string    `json:"name"`
-		Author         string    `json:"author"`
-		Genre          string    `json:"genre"`
-		Condition      string    `json:"condition"`
-		AvaliableCount int32     `json:"avaliableCount"`
-	}
-
-	books := []book{}
+	books := []models.Book{}
 	for _, row := range rows {
-		books = append(books, book{
+		books = append(books, models.Book{
 			BookUid:        row.BookUid,
 			Name:           row.Name_2,
 			Author:         row.Author.String,
@@ -188,17 +172,15 @@ func (cfg *libraryConfig) getLibraryBooks(c *gin.Context) {
 		})
 	}
 
-	elems := 0
-	paginated_books := []book{}
+	totalElems := len(rows)
+	paginated_books := []models.Book{}
 	for i, bk := range books {
 		if i >= (page*size) && i < ((page+1)*size) {
 			if show_all == true {
 				paginated_books = append(paginated_books, bk)
-				elems++
 			} else {
 				if bk.AvaliableCount > 0 {
 					paginated_books = append(paginated_books, bk)
-					elems++
 				}
 			}
 
@@ -206,9 +188,9 @@ func (cfg *libraryConfig) getLibraryBooks(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"page":          page,
-		"size":          size,
-		"totalelements": elems,
+		"page":          page + 1,
+		"pageSize":      size,
+		"totalElements": totalElems,
 		"items":         paginated_books,
 	})
 }
@@ -231,7 +213,13 @@ func (cfg *libraryConfig) getLibrary(c *gin.Context) {
 		})
 		return
 	}
-	c.JSON(http.StatusOK, library)
+
+	c.JSON(http.StatusOK, models.Library{
+		LibraryUid: library.LibraryUid,
+		Name:       library.Name,
+		City:       library.City,
+		Address:    library.Address,
+	})
 }
 
 func (cfg *libraryConfig) getLibraryBook(c *gin.Context) {

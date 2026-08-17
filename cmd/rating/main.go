@@ -60,10 +60,7 @@ func (cfg *ratingConfig) getRating(c *gin.Context) {
 	}
 	stars, err := cfg.queries.GetUserStars(c, username)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to make rating query",
-			"err":   err,
-		})
+		c.JSON(http.StatusOK, gin.H{"stars": 0})
 		return
 	}
 

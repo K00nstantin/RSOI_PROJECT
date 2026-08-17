@@ -4,7 +4,6 @@ import (
 	"RSOI_PROJECT/internal/reservationdb"
 	"RSOI_PROJECT/models"
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,41 +22,6 @@ type gatewayConfig struct {
 	libraryServiceURL     string
 	reservationServiceURL string
 	ratingServiceURL      string
-}
-
-type book struct {
-	BookUid uuid.UUID      `json:"book_uid"`
-	Name    string         `json:"name"`
-	Author  sql.NullString `json:"author"`
-	Genre   sql.NullString `json:"genre"`
-}
-
-type library struct {
-	LibraryUid uuid.UUID `json:"library_uid"`
-	Name       string    `json:"name"`
-	City       string    `json:"city"`
-	Address    string    `json:"address"`
-}
-
-type bookDTO struct {
-	BookUid uuid.UUID `json:"book_uid"`
-	Name    string    `json:"name"`
-	Author  string    `json:"author"`
-	Genre   string    `json:"genre"`
-}
-
-type rating struct {
-	Stars int `json:"stars"`
-}
-
-type reservation struct {
-	ReservationUid uuid.UUID `json:"reservationUid"`
-	Status         string    `json:"status"`
-	StartDate      time.Time `json:"startDate"`
-	TillDate       time.Time `json:"tillDate"`
-	Book           book      `json:"book"`
-	Library        library   `json:"library"`
-	Rating         rating    `json:"rating"`
 }
 
 func main() {
@@ -99,6 +63,19 @@ func healthCheck(c *gin.Context) {
 
 func (cfg *gatewayConfig) getLibrariesHandler(c *gin.Context) {
 	query_params := c.Request.URL.Query().Encode()
+	city := c.Request.URL.Query().Get("city")
+	if city == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "Missing required query parameter: city",
+			"errors": []gin.H{
+				{
+					"field": "city",
+					"error": "city is required",
+				},
+			},
+		})
+		return
+	}
 
 	request_string := cfg.libraryServiceURL + "/api/v1/libraries" + "?" + query_params
 
@@ -174,7 +151,7 @@ func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
 	}
 	req.Header.Add("X-User-Name", username)
 	resp, err := cfg.client.Do(req)
-	if err != nil {
+	if err != nil || resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": "failed to perform request",
 			"err":   err,
@@ -190,19 +167,9 @@ func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
 		})
 		return
 	}
-	type reservation struct {
-		ID             int32     `json:"id"`
-		ReservationUid uuid.UUID `json:"reservation_uid"`
-		Username       string    `json:"username"`
-		BookUid        uuid.UUID `json:"book_uid"`
-		LibraryUid     uuid.UUID `json:"library_uid"`
-		Status         string    `json:"status"`
-		StartDate      time.Time `json:"start_date"`
-		TillDate       time.Time `json:"till_date"`
-	}
 
 	type wrapper struct {
-		Reservations []reservation `json:"reservations"`
+		Reservations []models.Reservation `json:"reservations"`
 	}
 	wrapped := wrapper{}
 
@@ -215,16 +182,7 @@ func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
 		return
 	}
 
-	type final struct {
-		ReservationUid uuid.UUID `json:"reservationUid"`
-		Status         string    `json:"status"`
-		StartDate      time.Time `json:"startDate"`
-		TillDate       time.Time `json:"tillDate"`
-		Book           bookDTO   `json:"book"`
-		Library        library   `json:"library"`
-	}
-
-	final_resp := []final{}
+	final_resp := []models.GetReservationResponse{}
 	for _, reserv := range wrapped.Reservations {
 		lib, err := cfg.getLibraryByUUID(c, reserv.LibraryUid)
 
@@ -236,7 +194,7 @@ func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
 			return
 		}
 
-		final_resp = append(final_resp, final{
+		final_resp = append(final_resp, models.GetReservationResponse{
 			ReservationUid: reserv.ReservationUid,
 			Status:         reserv.Status,
 			StartDate:      reserv.StartDate,
@@ -249,7 +207,7 @@ func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, final_resp)
 }
 
-func (cfg *gatewayConfig) getLibraryByUUID(c *gin.Context, uuid uuid.UUID) (library, error) {
+func (cfg *gatewayConfig) getLibraryByUUID(c *gin.Context, uuid uuid.UUID) (models.Library, error) {
 	request_string := cfg.libraryServiceURL + "/api/v1/libraries/" + uuid.String()
 	request, err := http.NewRequest("GET", request_string, nil)
 	if err != nil {
@@ -257,15 +215,15 @@ func (cfg *gatewayConfig) getLibraryByUUID(c *gin.Context, uuid uuid.UUID) (libr
 			"error": "error while creating getlibrarybyuuid request",
 			"err":   err,
 		})
-		return library{}, err
+		return models.Library{}, err
 	}
 	response, err := cfg.client.Do(request)
-	if err != nil {
+	if err != nil || response.StatusCode != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "error while making getlibrarybyuuid request",
 			"err":   err,
 		})
-		return library{}, err
+		return models.Library{}, err
 	}
 
 	body, err := io.ReadAll(response.Body)
@@ -274,21 +232,21 @@ func (cfg *gatewayConfig) getLibraryByUUID(c *gin.Context, uuid uuid.UUID) (libr
 			"error": "error while reading body",
 			"err":   err,
 		})
-		return library{}, err
+		return models.Library{}, err
 	}
-	lib := library{}
+	lib := models.Library{}
 	if err = json.Unmarshal(body, &lib); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "error while reading body",
 			"err":   err,
 		})
-		return library{}, err
+		return models.Library{}, err
 	}
 
 	return lib, nil
 }
 
-func (cfg *gatewayConfig) getBookByUUID(c *gin.Context, book_uuid uuid.UUID, libraryuuid uuid.UUID) (bookDTO, error) {
+func (cfg *gatewayConfig) getBookByUUID(c *gin.Context, book_uuid uuid.UUID, libraryuuid uuid.UUID) (models.BookDTO, error) {
 	request_string := cfg.libraryServiceURL + "/api/v1/libraries/" + libraryuuid.String() + "/books/" + book_uuid.String()
 	request, err := http.NewRequest("GET", request_string, nil)
 	if err != nil {
@@ -296,7 +254,7 @@ func (cfg *gatewayConfig) getBookByUUID(c *gin.Context, book_uuid uuid.UUID, lib
 			"error": "error while creating getlibrarybyuuid request",
 			"err":   err,
 		})
-		return bookDTO{}, err
+		return models.BookDTO{}, err
 	}
 	response, err := cfg.client.Do(request)
 	if err != nil {
@@ -304,7 +262,7 @@ func (cfg *gatewayConfig) getBookByUUID(c *gin.Context, book_uuid uuid.UUID, lib
 			"error": "error while making getbookbyuuid request",
 			"err":   err,
 		})
-		return bookDTO{}, err
+		return models.BookDTO{}, err
 	}
 
 	body, err := io.ReadAll(response.Body)
@@ -313,18 +271,18 @@ func (cfg *gatewayConfig) getBookByUUID(c *gin.Context, book_uuid uuid.UUID, lib
 			"error": "error while reading body",
 			"err":   err,
 		})
-		return bookDTO{}, err
+		return models.BookDTO{}, err
 	}
 
-	bk := book{}
+	bk := models.SQLbook{}
 	if err = json.Unmarshal(body, &bk); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "error while unmarrshalling",
 			"err":   err,
 		})
-		return bookDTO{}, err
+		return models.BookDTO{}, err
 	}
-	dto := bookDTO{
+	dto := models.BookDTO{
 		BookUid: bk.BookUid,
 		Name:    bk.Name,
 		Author:  bk.Author.String,
@@ -368,12 +326,7 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	type request_body struct {
-		BookUid    uuid.UUID `json:"bookUid"`
-		LibraryUid uuid.UUID `json:"libraryUid"`
-		TillDate   time.Time `json:"tillDate"`
-	}
-	req_body := request_body{}
+	req_body := models.CreateReservationBody{}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -412,16 +365,6 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	type responseDTO struct {
-		ReservationUid uuid.UUID `json:"reservation_uid"`
-		Status         string    `json:"status"`
-		StartDate      time.Time `json:"start_date"`
-		TillDate       time.Time `json:"till_date"`
-		Book           bookDTO   `json:"book"`
-		Library        library   `json:"library"`
-		Rating         rating    `json:"rating"`
-	}
-
 	book, err := cfg.getBookByUUID(c, req_body.BookUid, req_body.LibraryUid)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
@@ -430,7 +373,7 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		})
 		return
 	}
-
+	fmt.Println(req_body.LibraryUid)
 	library, err := cfg.getLibraryByUUID(c, req_body.LibraryUid)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
@@ -456,11 +399,11 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		})
 		return
 	}
-	response := responseDTO{
+	response := models.ReservationDTO{
 		ReservationUid: resp.Reservation.ReservationUid,
 		Status:         resp.Reservation.Status,
-		StartDate:      resp.Reservation.StartDate,
-		TillDate:       resp.Reservation.TillDate,
+		StartDate:      models.Date(resp.Reservation.StartDate),
+		TillDate:       models.Date(resp.Reservation.TillDate),
 		Book:           book,
 		Library:        library,
 		Rating:         rating,
@@ -512,7 +455,7 @@ func (cfg *gatewayConfig) getBooksCount(c *gin.Context, username string) (int, e
 	return book_number.Count, nil
 }
 
-func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (rating, error) {
+func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (models.Rating, error) {
 	request_string := cfg.ratingServiceURL + "/api/v1/rating"
 	request, err := http.NewRequest("GET", request_string, nil)
 	if err != nil {
@@ -520,7 +463,7 @@ func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (rating, er
 			"error": "failed to create request",
 			"err":   err,
 		})
-		return rating{}, err
+		return models.Rating{}, err
 	}
 	request.Header.Add("X-User-Name", username)
 	response, err := cfg.client.Do(request)
@@ -529,7 +472,7 @@ func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (rating, er
 			"error": "failed to make a request",
 			"err":   err,
 		})
-		return rating{}, err
+		return models.Rating{}, err
 	}
 
 	body, err := io.ReadAll(response.Body)
@@ -538,17 +481,17 @@ func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (rating, er
 			"error": "failed to read body",
 			"err":   err,
 		})
-		return rating{}, err
+		return models.Rating{}, err
 	}
 
-	stars := rating{}
+	stars := models.Rating{}
 
 	if err = json.Unmarshal(body, &stars); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to unmarshall",
 			"err":   err,
 		})
-		return rating{}, err
+		return models.Rating{}, err
 	}
 	return stars, nil
 }

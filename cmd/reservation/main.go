@@ -63,9 +63,21 @@ func (cfg *reservationConfig) getReservations(c *gin.Context) {
 		})
 		return
 	}
+	final := make([]models.Reservation, len(reservations))
+	for i, res := range reservations {
+		final[i].ID = res.ID
+		final[i].ReservationUid = res.ReservationUid
+		final[i].Username = res.Username
+		final[i].BookUid = res.BookUid
+		final[i].LibraryUid = res.LibraryUid
+		final[i].Status = res.Status
+		final[i].StartDate = models.Date(res.StartDate)
+		final[i].TillDate = models.Date(res.TillDate)
+
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"reservations": reservations,
+		"reservations": final,
 	})
 }
 
@@ -98,12 +110,8 @@ func (cfg *reservationConfig) createReservation(c *gin.Context) {
 		})
 		return
 	}
-	type request_body struct {
-		BookUid    uuid.UUID `json:"bookUid"`
-		LibraryUid uuid.UUID `json:"libraryUid"`
-		TillDate   time.Time `json:"tillDate"`
-	}
-	req_body := request_body{}
+
+	req_body := models.CreateReservationBody{}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -123,7 +131,7 @@ func (cfg *reservationConfig) createReservation(c *gin.Context) {
 		Username:   username,
 		BookUid:    req_body.BookUid,
 		LibraryUid: req_body.LibraryUid,
-		TillDate:   req_body.TillDate,
+		TillDate:   time.Time(req_body.TillDate),
 	}
 	row, err := cfg.queries.CreateReservation(c, params)
 	if err != nil {
@@ -181,7 +189,7 @@ func (cfg *reservationConfig) returnBook(c *gin.Context) {
 		return
 	}
 
-	if params.Date.After(reservation.TillDate) {
+	if time.Time(params.Date).After(reservation.TillDate) {
 		delta -= 10
 		flag = true
 		r, err := cfg.queries.SetExpired(c, id)
