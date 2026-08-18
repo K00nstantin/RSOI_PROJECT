@@ -21,6 +21,9 @@ import (
 type reservationConfig struct {
 	reservationServiceURL string
 	queries               *reservationdb.Queries
+	identityServiceURL    string
+	client                http.Client
+	jwkSet                []byte
 }
 
 func main() {
@@ -35,11 +38,20 @@ func main() {
 		return
 	}
 	dbQueries := reservationdb.New(db)
-	reservationServiceURL := os.Getenv("RESERVATION_SERVICE_URL")
-	cfg := reservationConfig{
-		reservationServiceURL: reservationServiceURL,
-		queries:               dbQueries,
+	myClient := http.Client{
+		Timeout: 10 * time.Second,
 	}
+	cfg := reservationConfig{
+		reservationServiceURL: os.Getenv("RESERVATION_SERVICE_URL"),
+		queries:               dbQueries,
+		client:                myClient,
+		identityServiceURL:    os.Getenv("IDENTITY_SERVICE_URL"),
+	}
+
+	if err = cfg.getJWKS(); err != nil {
+		fmt.Println("Error getting JWKS: %w", err)
+	}
+
 	server := gin.Default()
 	server.GET("/api/v1/reservations", cfg.getReservations)
 	server.GET("/api/v1/reservations/active/count", cfg.getActiveReservationsCount)
@@ -229,4 +241,24 @@ func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "up",
 	})
+}
+
+func (cfg *reservationConfig) getJWKS() error {
+	request_str := cfg.identityServiceURL + "/api/v1/jwks"
+	request, err := http.NewRequest("GET", request_str, nil)
+	if err != nil {
+		return fmt.Errorf("error while creating a request: %w", err)
+	}
+	response, err := cfg.client.Do(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		return fmt.Errorf("error while making a request: %w", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("error while reading body: %w", err)
+	}
+	cfg.jwkSet = body
+	return nil
+
 }

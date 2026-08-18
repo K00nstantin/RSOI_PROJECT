@@ -20,8 +20,10 @@ import (
 )
 
 type libraryConfig struct {
-	queries *librarydb.Queries
-	client  http.Client
+	queries            *librarydb.Queries
+	client             http.Client
+	identityServiceURL string
+	jwkSet             []byte
 }
 
 func main() {
@@ -42,8 +44,13 @@ func main() {
 	}
 
 	cfg := libraryConfig{
-		queries: dbQueries,
-		client:  myClient,
+		queries:            dbQueries,
+		client:             myClient,
+		identityServiceURL: os.Getenv("IDENTITY_SERVICE_URL"),
+	}
+
+	if err = cfg.getJWKS(); err != nil {
+		fmt.Println("Error getting JWKS: %w", err)
 	}
 
 	server := gin.Default()
@@ -362,4 +369,24 @@ func (cfg *libraryConfig) increaseBookCount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"delta": delta,
 	})
+}
+
+func (cfg *libraryConfig) getJWKS() error {
+	request_str := cfg.identityServiceURL + "/api/v1/jwks"
+	request, err := http.NewRequest("GET", request_str, nil)
+	if err != nil {
+		return fmt.Errorf("error while creating a request: %w", err)
+	}
+	response, err := cfg.client.Do(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		return fmt.Errorf("error while making a request: %w", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("error while reading body: %w", err)
+	}
+	cfg.jwkSet = body
+	return nil
+
 }

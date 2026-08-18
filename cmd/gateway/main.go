@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -22,6 +21,8 @@ type gatewayConfig struct {
 	libraryServiceURL     string
 	reservationServiceURL string
 	ratingServiceURL      string
+	identityServiceURL    string
+	jwkSet                []byte
 }
 
 func main() {
@@ -39,8 +40,11 @@ func main() {
 		libraryServiceURL:     os.Getenv("LIBRARY_SERVICE_URL"),
 		reservationServiceURL: os.Getenv("RESERVATION_SERVICE_URL"),
 		ratingServiceURL:      os.Getenv("RATING_SERVICE_URL"),
+		identityServiceURL:    os.Getenv("IDENTITY_SERVICE_URL"),
 	}
-
+	if err = cfg.getJWKS(); err != nil {
+		fmt.Println("Error getting JWKS: %w", err)
+	}
 	r := gin.Default()
 
 	r.GET("/api/v1/libraries", cfg.getLibrariesHandler)
@@ -51,8 +55,27 @@ func main() {
 	r.GET("/api/v1/rating", cfg.getRatingHandler)
 	r.GET("/manage/health", healthCheck)
 
-	log.Println("Gateway service starting on port 8080")
 	r.Run(":8080")
+}
+
+func (cfg *gatewayConfig) getJWKS() error {
+	request_str := cfg.identityServiceURL + "/api/v1/jwks"
+	request, err := http.NewRequest("GET", request_str, nil)
+	if err != nil {
+		return fmt.Errorf("error while creating a request: %w", err)
+	}
+	response, err := cfg.client.Do(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		return fmt.Errorf("error while making a request: %w", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("error while reading body: %w", err)
+	}
+	cfg.jwkSet = body
+	return nil
+
 }
 
 func healthCheck(c *gin.Context) {
