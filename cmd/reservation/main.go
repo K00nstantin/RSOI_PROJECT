@@ -45,7 +45,7 @@ func main() {
 	server.GET("/api/v1/reservations/active/count", cfg.getActiveReservationsCount)
 	server.POST("/api/v1/reservations", cfg.createReservation)
 	server.POST("/api/v1/reservations/:reservationUid/return", cfg.returnBook)
-	// server.GET("/manage/health", healthCheck)
+	server.GET("/manage/health", healthCheck)
 
 	log.Println("Reservation service starting on :8070")
 	if err := server.Run(":8070"); err != nil {
@@ -223,4 +223,10 @@ func (cfg *reservationConfig) returnBook(c *gin.Context) {
 		"delta":      delta,
 	})
 
+}
+
+func healthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status": "up",
+	})
 }
