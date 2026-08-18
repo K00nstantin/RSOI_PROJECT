@@ -1,6 +1,7 @@
 package main
 
 import (
+	"RSOI_PROJECT/internal/auth"
 	"RSOI_PROJECT/internal/reservationdb"
 	"RSOI_PROJECT/models"
 	"bytes"
@@ -22,7 +23,7 @@ type gatewayConfig struct {
 	reservationServiceURL string
 	ratingServiceURL      string
 	identityServiceURL    string
-	jwkSet                []byte
+	publicKey             interface{}
 }
 
 func main() {
@@ -34,7 +35,7 @@ func main() {
 	myClient := http.Client{
 		Timeout: 10 * time.Second,
 	}
-
+	auth_cfg := auth.NewConfig()
 	cfg := gatewayConfig{
 		client:                myClient,
 		libraryServiceURL:     os.Getenv("LIBRARY_SERVICE_URL"),
@@ -42,7 +43,7 @@ func main() {
 		ratingServiceURL:      os.Getenv("RATING_SERVICE_URL"),
 		identityServiceURL:    os.Getenv("IDENTITY_SERVICE_URL"),
 	}
-	if err = cfg.getJWKS(); err != nil {
+	if err = auth_cfg.LoadJWKS(cfg.identityServiceURL); err != nil {
 		fmt.Println("Error getting JWKS: %w", err)
 	}
 	r := gin.Default()
@@ -56,26 +57,6 @@ func main() {
 	r.GET("/manage/health", healthCheck)
 
 	r.Run(":8080")
-}
-
-func (cfg *gatewayConfig) getJWKS() error {
-	request_str := cfg.identityServiceURL + "/api/v1/jwks"
-	request, err := http.NewRequest("GET", request_str, nil)
-	if err != nil {
-		return fmt.Errorf("error while creating a request: %w", err)
-	}
-	response, err := cfg.client.Do(request)
-	if err != nil || response.StatusCode != http.StatusOK {
-		return fmt.Errorf("error while making a request: %w", err)
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return fmt.Errorf("error while reading body: %w", err)
-	}
-	cfg.jwkSet = body
-	return nil
-
 }
 
 func healthCheck(c *gin.Context) {

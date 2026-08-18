@@ -1,6 +1,7 @@
 package main
 
 import (
+	"RSOI_PROJECT/internal/auth"
 	"RSOI_PROJECT/internal/reservationdb"
 	"RSOI_PROJECT/models"
 	"database/sql"
@@ -48,7 +49,8 @@ func main() {
 		identityServiceURL:    os.Getenv("IDENTITY_SERVICE_URL"),
 	}
 
-	if err = cfg.getJWKS(); err != nil {
+	auth_cfg := auth.NewConfig()
+	if err = auth_cfg.LoadJWKS(cfg.identityServiceURL); err != nil {
 		fmt.Println("Error getting JWKS: %w", err)
 	}
 
@@ -241,24 +243,4 @@ func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "up",
 	})
-}
-
-func (cfg *reservationConfig) getJWKS() error {
-	request_str := cfg.identityServiceURL + "/api/v1/jwks"
-	request, err := http.NewRequest("GET", request_str, nil)
-	if err != nil {
-		return fmt.Errorf("error while creating a request: %w", err)
-	}
-	response, err := cfg.client.Do(request)
-	if err != nil || response.StatusCode != http.StatusOK {
-		return fmt.Errorf("error while making a request: %w", err)
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return fmt.Errorf("error while reading body: %w", err)
-	}
-	cfg.jwkSet = body
-	return nil
-
 }
