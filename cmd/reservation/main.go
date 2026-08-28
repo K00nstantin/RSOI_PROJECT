@@ -24,7 +24,6 @@ type reservationConfig struct {
 	queries               *reservationdb.Queries
 	identityServiceURL    string
 	client                http.Client
-	jwkSet                []byte
 }
 
 func main() {
@@ -51,10 +50,11 @@ func main() {
 
 	auth_cfg := auth.NewConfig()
 	if err = auth_cfg.LoadJWKS(cfg.identityServiceURL); err != nil {
-		fmt.Println("Error getting JWKS: %w", err)
+		log.Fatalf("Failed to load JWKS: %v", err)
 	}
 
 	server := gin.Default()
+	server.Use(auth_cfg.AuthMiddleware())
 	server.GET("/api/v1/reservations", cfg.getReservations)
 	server.GET("/api/v1/reservations/active/count", cfg.getActiveReservationsCount)
 	server.POST("/api/v1/reservations", cfg.createReservation)
@@ -68,7 +68,7 @@ func main() {
 }
 
 func (cfg *reservationConfig) getReservations(c *gin.Context) {
-	username := c.Request.Header.Get("X-User-Name")
+	username := c.GetString("username")
 	reservations, err := cfg.queries.GetReservations(c, username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -96,7 +96,7 @@ func (cfg *reservationConfig) getReservations(c *gin.Context) {
 }
 
 func (cfg *reservationConfig) getActiveReservationsCount(c *gin.Context) {
-	username := c.Request.Header.Get("X-User-Name")
+	username := c.GetString("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid username",
@@ -117,7 +117,7 @@ func (cfg *reservationConfig) getActiveReservationsCount(c *gin.Context) {
 }
 
 func (cfg *reservationConfig) createReservation(c *gin.Context) {
-	username := c.Request.Header.Get("X-User-Name")
+	username := c.GetString("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid username",

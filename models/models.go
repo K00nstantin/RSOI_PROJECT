@@ -105,3 +105,10 @@ type SQLbook struct {
 	Author  sql.NullString `json:"author"`
 	Genre   sql.NullString `json:"genre"`
 }
+
+type User struct {
+	Username     string
+	PasswordHash string
+	Email        string
+	Role         string
+}

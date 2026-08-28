@@ -24,7 +24,6 @@ type libraryConfig struct {
 	queries            *librarydb.Queries
 	client             http.Client
 	identityServiceURL string
-	jwkSet             []byte
 }
 
 func main() {
@@ -51,10 +50,11 @@ func main() {
 	}
 	auth_cfg := auth.NewConfig()
 	if err = auth_cfg.LoadJWKS(cfg.identityServiceURL); err != nil {
-		fmt.Println("Error getting JWKS: %w", err)
+		log.Fatalf("Failed to load JWKS: %v", err)
 	}
 
 	server := gin.Default()
+	server.Use(auth_cfg.AuthMiddleware())
 	server.GET("/api/v1/libraries", cfg.getLibraries)
 	server.GET("/api/v1/libraries/:libraryUid", cfg.getLibrary)
 	server.GET("/api/v1/libraries/:libraryUid/books", cfg.getLibraryBooks)

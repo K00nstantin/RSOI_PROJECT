@@ -26,3 +26,12 @@ sql:
         package: "ratingdb"
         out: "internal/ratingdb"
         emit_json_tags: true
+
+  - engine: "postgresql"
+    schema: "postgres/schema/identity_service"
+    queries: "postgres/queries/identity_service"
+    gen:
+      go:
+        package: "identitydb"
+        out: "internal/identitydb"
+        emit_json_tags: true

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -44,10 +45,10 @@ func main() {
 		identityServiceURL:    os.Getenv("IDENTITY_SERVICE_URL"),
 	}
 	if err = auth_cfg.LoadJWKS(cfg.identityServiceURL); err != nil {
-		fmt.Println("Error getting JWKS: %w", err)
+		log.Fatalf("Failed to load JWKS: %v", err)
 	}
 	r := gin.Default()
-
+	r.Use(auth_cfg.AuthMiddleware())
 	r.GET("/api/v1/libraries", cfg.getLibrariesHandler)
 	r.GET("/api/v1/libraries/:libraryUid/books", cfg.getLibraryBooksHandler)
 	r.GET("/api/v1/reservations", cfg.getReservationsHandler)
@@ -90,6 +91,7 @@ func (cfg *gatewayConfig) getLibrariesHandler(c *gin.Context) {
 		})
 		return
 	}
+	req.Header.Set("Authorization", c.GetHeader("Authorization"))
 	resp, err := cfg.client.Do(req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -121,7 +123,7 @@ func (cfg *gatewayConfig) getLibraryBooksHandler(c *gin.Context) {
 		})
 		return
 	}
-
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	resp, err := cfg.client.Do(request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -143,7 +145,6 @@ func (cfg *gatewayConfig) getLibraryBooksHandler(c *gin.Context) {
 }
 
 func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
-	username := c.Request.Header.Get("X-User-Name")
 	request_string := cfg.reservationServiceURL + "/api/v1/reservations"
 	req, err := http.NewRequest("GET", request_string, nil)
 	if err != nil {
@@ -153,7 +154,7 @@ func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
 		})
 		return
 	}
-	req.Header.Add("X-User-Name", username)
+	req.Header.Set("Authorization", c.GetHeader("Authorization"))
 	resp, err := cfg.client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusBadGateway, gin.H{
@@ -221,6 +222,7 @@ func (cfg *gatewayConfig) getLibraryByUUID(c *gin.Context, uuid uuid.UUID) (mode
 		})
 		return models.Library{}, err
 	}
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil || response.StatusCode != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -260,6 +262,7 @@ func (cfg *gatewayConfig) getBookByUUID(c *gin.Context, book_uuid uuid.UUID, lib
 		})
 		return models.BookDTO{}, err
 	}
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -296,14 +299,7 @@ func (cfg *gatewayConfig) getBookByUUID(c *gin.Context, book_uuid uuid.UUID, lib
 }
 
 func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
-	username := c.Request.Header.Get("X-User-Name")
-	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid username",
-		})
-		return
-	}
-	books_count, err := cfg.getBooksCount(c, username)
+	books_count, err := cfg.getBooksCount(c)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to get books count",
@@ -312,7 +308,7 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	stars_count, err := cfg.getRating(c, username)
+	stars_count, err := cfg.getRating(c)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to get stars count",
@@ -348,7 +344,7 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	resp_body, err := cfg.createReservation(c, username, c.Request.Body)
+	resp_body, err := cfg.createReservation(c, c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to create reservation",
@@ -387,7 +383,7 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		return
 	}
 
-	rating, err := cfg.getRating(c, username)
+	rating, err := cfg.getRating(c)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": "error getting rating",
@@ -395,7 +391,7 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		})
 		return
 	}
-	err = cfg.decreaseBookCount(req_body.BookUid, req_body.LibraryUid)
+	err = cfg.decreaseBookCount(c, req_body.BookUid, req_body.LibraryUid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to decrease book count",
@@ -416,7 +412,7 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 
 }
 
-func (cfg *gatewayConfig) getBooksCount(c *gin.Context, username string) (int, error) {
+func (cfg *gatewayConfig) getBooksCount(c *gin.Context) (int, error) {
 	request_string := cfg.reservationServiceURL + "/api/v1/reservations/active/count"
 	request, err := http.NewRequest("GET", request_string, nil)
 	if err != nil {
@@ -426,7 +422,7 @@ func (cfg *gatewayConfig) getBooksCount(c *gin.Context, username string) (int, e
 		})
 		return -1, err
 	}
-	request.Header.Add("X-User-Name", username)
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
@@ -459,7 +455,7 @@ func (cfg *gatewayConfig) getBooksCount(c *gin.Context, username string) (int, e
 	return book_number.Count, nil
 }
 
-func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (models.Rating, error) {
+func (cfg *gatewayConfig) getRating(c *gin.Context) (models.Rating, error) {
 	request_string := cfg.ratingServiceURL + "/api/v1/rating"
 	request, err := http.NewRequest("GET", request_string, nil)
 	if err != nil {
@@ -469,7 +465,7 @@ func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (models.Rat
 		})
 		return models.Rating{}, err
 	}
-	request.Header.Add("X-User-Name", username)
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -500,7 +496,7 @@ func (cfg *gatewayConfig) getRating(c *gin.Context, username string) (models.Rat
 	return stars, nil
 }
 
-func (cfg *gatewayConfig) createReservation(c *gin.Context, username string, body io.Reader) ([]byte, error) {
+func (cfg *gatewayConfig) createReservation(c *gin.Context, body io.Reader) ([]byte, error) {
 	request_string := cfg.reservationServiceURL + "/api/v1/reservations"
 	request, err := http.NewRequest("POST", request_string, body)
 	if err != nil {
@@ -510,7 +506,7 @@ func (cfg *gatewayConfig) createReservation(c *gin.Context, username string, bod
 		})
 		return nil, err
 	}
-	request.Header.Add("X-User-Name", username)
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -531,12 +527,13 @@ func (cfg *gatewayConfig) createReservation(c *gin.Context, username string, bod
 	return resp_body, nil
 }
 
-func (cfg *gatewayConfig) decreaseBookCount(book_uuid uuid.UUID, libraryuuid uuid.UUID) error {
+func (cfg *gatewayConfig) decreaseBookCount(c *gin.Context, book_uuid uuid.UUID, libraryuuid uuid.UUID) error {
 	request_string := cfg.libraryServiceURL + "/api/v1/libraries/" + libraryuuid.String() + "/books/" + book_uuid.String() + "/decrease"
 	request, err := http.NewRequest("POST", request_string, nil)
 	if err != nil {
 		return err
 	}
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		return err
@@ -549,14 +546,8 @@ func (cfg *gatewayConfig) decreaseBookCount(book_uuid uuid.UUID, libraryuuid uui
 }
 
 func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
+	username := c.GetString("username")
 	reservationUid_str := c.Param("reservationUid")
-	username := c.Request.Header.Get("X-User-Name")
-	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid username",
-		})
-		return
-	}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -568,7 +559,7 @@ func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
 	body_1 := bytes.NewReader(body)
 	body_2 := bytes.NewReader(body)
 
-	err, bookUid, libraryUid, del := cfg.closeReservation(reservationUid_str, body_1)
+	err, bookUid, libraryUid, del := cfg.closeReservation(c, reservationUid_str, body_1)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to close reservation",
@@ -577,7 +568,7 @@ func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
 		return
 	}
 
-	err, delta := cfg.returnBook(libraryUid, bookUid, body_2, del)
+	err, delta := cfg.returnBook(c, libraryUid, bookUid, body_2, del)
 	if delta == 0 {
 		delta++
 	}
@@ -603,6 +594,7 @@ func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
 		})
 		return
 	}
+	update_request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	_, err = cfg.client.Do(update_request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -615,12 +607,13 @@ func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
 
 }
 
-func (cfg *gatewayConfig) closeReservation(reservaton_uuid_str string, io_body io.Reader) (error, uuid.UUID, uuid.UUID, int) {
+func (cfg *gatewayConfig) closeReservation(c *gin.Context, reservaton_uuid_str string, io_body io.Reader) (error, uuid.UUID, uuid.UUID, int) {
 	request_str := cfg.reservationServiceURL + "/api/v1/reservations/" + reservaton_uuid_str + "/return"
 	request, err := http.NewRequest("POST", request_str, io_body)
 	if err != nil {
 		return err, uuid.Nil, uuid.Nil, 0
 	}
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		return err, uuid.Nil, uuid.Nil, 0
@@ -639,12 +632,13 @@ func (cfg *gatewayConfig) closeReservation(reservaton_uuid_str string, io_body i
 
 }
 
-func (cfg *gatewayConfig) returnBook(libraryUid, bookUid uuid.UUID, io_body io.Reader, del int) (error, int) {
+func (cfg *gatewayConfig) returnBook(c *gin.Context, libraryUid, bookUid uuid.UUID, io_body io.Reader, del int) (error, int) {
 	request_str := cfg.libraryServiceURL + "/api/v1/libraries/" + libraryUid.String() + "/books/" + bookUid.String() + "/increase"
 	request, err := http.NewRequest("POST", request_str, io_body)
 	if err != nil {
 		return err, 0
 	}
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		return err, 0
@@ -664,13 +658,6 @@ func (cfg *gatewayConfig) returnBook(libraryUid, bookUid uuid.UUID, io_body io.R
 }
 
 func (cfg *gatewayConfig) getRatingHandler(c *gin.Context) {
-	username := c.Request.Header.Get("X-User-Name")
-	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid username",
-		})
-		return
-	}
 	request_str := cfg.ratingServiceURL + "/api/v1/rating"
 	request, err := http.NewRequest("GET", request_str, nil)
 	if err != nil {
@@ -680,7 +667,7 @@ func (cfg *gatewayConfig) getRatingHandler(c *gin.Context) {
 		})
 		return
 	}
-	request.Header.Add("X-User-Name", username)
+	request.Header.Set("Authorization", c.GetHeader("Authorization"))
 	response, err := cfg.client.Do(request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

@@ -22,7 +22,6 @@ type ratingConfig struct {
 	queries            *ratingdb.Queries
 	identityServiceURL string
 	client             http.Client
-	jwkSet             []byte
 }
 
 func main() {
@@ -51,10 +50,11 @@ func main() {
 
 	auth_cfg := auth.NewConfig()
 	if err = auth_cfg.LoadJWKS(cfg.identityServiceURL); err != nil {
-		fmt.Println("Error getting JWKS: %w", err)
+		log.Fatalf("Failed to load JWKS: %v", err)
 	}
 
 	server := gin.Default()
+	server.Use(auth_cfg.AuthMiddleware())
 	server.GET("/api/v1/rating", cfg.getRating)
 	server.PUT("/api/v1/rating", cfg.updateRating)
 	// server.GET("/manage/health", healthCheck)
@@ -66,7 +66,7 @@ func main() {
 }
 
 func (cfg *ratingConfig) getRating(c *gin.Context) {
-	username := c.Request.Header.Get("X-User-Name")
+	username := c.GetString("username")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid username",
