@@ -56,6 +56,15 @@ func (cfg *authConfig) LoadJWKS(idpURL string) error {
 
 func (cfg *authConfig) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+
 		open_paths := map[string]bool{
 			"/manage/health":    true,
 			"/api/v1/jwks":      true,

@@ -93,7 +93,7 @@ func (cfg *gatewayConfig) getLibrariesHandler(c *gin.Context) {
 	}
 	req.Header.Set("Authorization", c.GetHeader("Authorization"))
 	resp, err := cfg.client.Do(req)
-	if err != nil {
+	if err != nil || resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err,
 		})
