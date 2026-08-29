@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authorization Consent</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 500px; margin: auto; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
+        .scopes { margin: 20px 0; }
+        input[type="checkbox"] { margin-right: 10px; }
+        button { padding: 8px 16px; margin-right: 10px; cursor: pointer; }
+        .allow { background: #4CAF50; color: white; border: none; }
+        .deny { background: #f44336; color: white; border: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Authorization Request</h2>
+        <p><strong>Application:</strong> {{.ClientName}}</p>
+        <p><strong>Select permissions you grant:</strong></p>
+        <form method="POST" action="/api/v1/consent">
+            <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
+            <input type="hidden" name="state" value="{{.State}}">
+            <input type="hidden" name="username" value="{{.Username}}">
+            <div class="scopes">
+                {{range .Scopes}}
+                <label>
+                    <input type="checkbox" name="scopes" value="{{.}}" checked> {{.}}
+                </label><br>
+                {{else}}
+                <p>No additional permissions requested.</p>
+                {{end}}
+            </div>
+            <button type="submit" name="action" value="allow" class="allow">Allow</button>
+            <button type="submit" name="action" value="deny" class="deny">Deny</button>
+        </form>
+    </div>
+</body>
+</html>

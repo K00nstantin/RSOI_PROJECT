@@ -7,10 +7,13 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +24,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+//go:embed templates
+var fs embed.FS
+
 type identityConfig struct {
 	client             http.Client
 	gatewayServiceURL  string
@@ -29,6 +35,7 @@ type identityConfig struct {
 	publicKey          *rsa.PublicKey
 	privateKey         *rsa.PrivateKey
 	queries            *identitydb.Queries
+	templateFS         embed.FS
 }
 
 func main() {
@@ -52,6 +59,7 @@ func main() {
 		gatewayServiceURL:  os.Getenv("GATEWAY_SERVICE_URL"),
 		identityServiceURL: os.Getenv("IDENTITY_SERVICE_URL"),
 		queries:            dbQueries,
+		templateFS:         fs,
 	}
 	auth_cfg := auth.NewConfig()
 	if err := cfg.initKeys(); err != nil {
@@ -73,14 +81,57 @@ func main() {
 	r.GET("/api/v1/authorize", cfg.authorizationHandler)
 	r.GET("/api/v1/jwks", cfg.getJWKS)
 	r.POST("/api/v1/createUser", cfg.createUserHandler)
+	r.GET("/api/v1/login", cfg.loginPageHandler)
+	r.POST("/api/v1/login", cfg.loginHandler)
+	r.POST("/api/v1/consent", cfg.consentHandler)
 
 	r.Run(":8090")
 }
 
 func (cfg *identityConfig) authorizationHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"message": "this is authorization handler",
-	})
+	response_type := c.Query("response_type")
+	client_id := c.Query("client_id")
+	redirect_uri := c.Query("redirect_uri")
+	scope := c.Query("scope")
+	state := c.Query("state")
+
+	allowed_clients := map[string]string{
+		"SPA Application": "http://localhost:3000/callback",
+	}
+	if response_type != "token" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "unsupported response_type, expected 'token'",
+		})
+		return
+	}
+
+	allowed_redirect, ok := allowed_clients[client_id]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid client_id",
+		})
+		return
+	}
+
+	if redirect_uri != allowed_redirect {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid redirect_uri",
+		})
+		return
+	}
+
+	if state == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "missing state parameter",
+		})
+		return
+	}
+
+	if scope == "" {
+		scope = "openid"
+	}
+	loginURL := fmt.Sprintf("/api/v1/login?redirect_uri=%s&state=%s&scope=%s", redirect_uri, state, scope)
+	c.Redirect(http.StatusFound, loginURL)
 }
 
 func (cfg *identityConfig) initKeys() error {
@@ -195,4 +246,124 @@ func (cfg *identityConfig) createUserHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, nil)
+}
+
+func (cfg *identityConfig) loginPageHandler(c *gin.Context) {
+	redirect := c.Query("redirect_uri")
+	if redirect == "" {
+		c.String(http.StatusBadRequest, "missing redirect uri")
+		return
+	}
+	state := c.Query("state")
+	scope := c.Query("scope")
+
+	templ, err := template.ParseFS(cfg.templateFS, "templates/login.html")
+	if err != nil {
+		c.String(http.StatusInternalServerError, "error loading template")
+		return
+	}
+	data := struct {
+		RedirectURI string
+		State       string
+		Scope       string
+	}{
+		RedirectURI: redirect,
+		State:       state,
+		Scope:       scope,
+	}
+	c.Header("Content-Type", "text/html")
+	if err = templ.Execute(c.Writer, data); err != nil {
+		c.String(http.StatusInternalServerError, "render error")
+	}
+}
+
+func (cfg *identityConfig) loginHandler(c *gin.Context) {
+	username := c.PostForm("username")
+	password := c.PostForm("password")
+	redirect := c.PostForm("redirect_uri")
+	state := c.PostForm("state")
+	scope := c.PostForm("scope")
+
+	if username == "" || password == "" || redirect == "" {
+		c.String(http.StatusBadRequest, "missing required fields")
+		return
+	}
+
+	user, err := cfg.getUserByUsername(c, username)
+	if err != nil {
+		c.String(http.StatusUnauthorized, "invalid user")
+		return
+	}
+	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		c.String(http.StatusUnauthorized, "wrong password")
+		return
+	}
+
+	allscopes := strings.Fields(scope)
+	displayscopes := []string{}
+
+	for _, s := range allscopes {
+		if s != "openid" {
+			displayscopes = append(displayscopes, s)
+		}
+	}
+
+	tmpl, err := template.ParseFS(cfg.templateFS, "templates/consent.html")
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Template error")
+		return
+	}
+	data := struct {
+		RedirectURI string
+		State       string
+		Username    string
+		Scopes      []string
+		ClientName  string
+	}{
+		RedirectURI: redirect,
+		State:       state,
+		Username:    username,
+		Scopes:      displayscopes,
+		ClientName:  "SPA Application",
+	}
+	c.Header("Content-Type", "text/html")
+	if err = tmpl.Execute(c.Writer, data); err != nil {
+		c.String(http.StatusInternalServerError, "Render error")
+	}
+}
+
+func (cfg *identityConfig) consentHandler(c *gin.Context) {
+	action := c.PostForm("action")
+	redirectURI := c.PostForm("redirect_uri")
+	state := c.PostForm("state")
+	username := c.PostForm("username")
+	selectedScopes := c.PostFormArray("scopes")
+
+	if action == "deny" {
+		c.Redirect(http.StatusFound, redirectURI+"?error=access_denied&state="+state)
+		return
+	}
+	if action != "allow" {
+		c.String(http.StatusBadRequest, "Invalid action")
+		return
+	}
+
+	finalScopes := []string{"openid"}
+	finalScopes = append(finalScopes, selectedScopes...)
+
+	user, err := cfg.getUserByUsername(c, username)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "User not found")
+		return
+	}
+
+	token, err := cfg.generateJWT(username, user.Email, user.Role, finalScopes)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to generate token")
+		return
+	}
+
+	redirectURL := fmt.Sprintf("%s#access_token=%s&token_type=Bearer&state=%s&expires_in=%d",
+		redirectURI, token, state, 3600)
+	c.Redirect(http.StatusFound, redirectURL)
 }

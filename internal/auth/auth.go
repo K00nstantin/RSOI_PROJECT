@@ -61,6 +61,7 @@ func (cfg *authConfig) AuthMiddleware() gin.HandlerFunc {
 			"/api/v1/jwks":      true,
 			"/api/v1/authorize": true,
 			"/api/v1/login":     true,
+			"/api/v1/consent":   true,
 		}
 		if open_paths[c.Request.URL.Path] {
 			c.Next()

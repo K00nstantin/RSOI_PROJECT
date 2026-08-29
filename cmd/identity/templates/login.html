@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <style>
+        body { font-family: Arial; margin: 50px; }
+        input { display: block; margin: 10px 0; padding: 8px; width: 200px; }
+        button { padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h2>Sign in</h2>
+    <form method="POST" action="/api/v1/login">
+        <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
+        <input type="hidden" name="state" value="{{.State}}">
+        <input type="hidden" name="scope" value="{{.Scope}}">
+        <label>Username: <input type="text" name="username" required></label>
+        <label>Password: <input type="password" name="password" required></label>
+        <button type="submit">Login</button>
+    </form>
+</body>
+</html>
