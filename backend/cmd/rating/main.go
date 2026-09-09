@@ -27,7 +27,6 @@ type ratingConfig struct {
 func main() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("error while loading .env")
-		return
 	}
 
 	db_url := os.Getenv("RATINGS_DB_URL")
@@ -57,6 +56,7 @@ func main() {
 	server.Use(auth_cfg.AuthMiddleware())
 	server.GET("/api/v1/rating", cfg.getRating)
 	server.PUT("/api/v1/rating", cfg.updateRating)
+	server.POST("/api/v1/rating/init", cfg.initRating)
 	// server.GET("/manage/health", healthCheck)
 
 	log.Println("Rating service starting on :8050")
@@ -121,4 +121,25 @@ func (cfg *ratingConfig) updateRating(c *gin.Context) {
 		return
 	}
 
+}
+
+func (cfg *ratingConfig) initRating(c *gin.Context) {
+	var req struct {
+		Username string `json:"username"`
+		Stars    int32  `json:"stars"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	params := ratingdb.CreateUserParams{
+		Username: req.Username,
+		Stars:    req.Stars,
+	}
+	if err := cfg.queries.CreateUser(c, params); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create rating"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "rating initialized"})
 }

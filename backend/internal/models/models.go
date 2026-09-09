@@ -32,7 +32,7 @@ type Book struct {
 	Author         string    `json:"author"`
 	Genre          string    `json:"genre"`
 	Condition      string    `json:"condition"`
-	AvaliableCount int32     `json:"avaliableCount"`
+	AvailableCount int32     `json:"availableCount"`
 }
 
 type CreateReservationBody struct {

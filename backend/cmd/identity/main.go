@@ -3,7 +3,7 @@ package main
 import (
 	"RSOI_PROJECT/internal/auth"
 	"RSOI_PROJECT/internal/identitydb"
-	"RSOI_PROJECT/models"
+	"RSOI_PROJECT/internal/models"
 	"crypto/rand"
 	"crypto/rsa"
 	"database/sql"
@@ -205,11 +205,10 @@ func (cfg *identityConfig) getUserByUsername(c *gin.Context, username string) (m
 
 func (cfg *identityConfig) createUserHandler(c *gin.Context) {
 	if c.GetString("role") != "Admin" {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "role must be admin",
-		})
+		c.JSON(http.StatusForbidden, gin.H{"error": "role must be admin"})
 		return
 	}
+
 	var unhashed_user struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -217,18 +216,16 @@ func (cfg *identityConfig) createUserHandler(c *gin.Context) {
 		Role     string `json:"role"`
 	}
 	if err := c.ShouldBindJSON(&unhashed_user); err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request",
-		})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+
 	hashed_password, err := bcrypt.GenerateFromPassword([]byte(unhashed_user.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "error while hashing password",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error while hashing password"})
 		return
 	}
+
 	email := sql.NullString{
 		String: unhashed_user.Email,
 		Valid:  true,
@@ -239,12 +236,11 @@ func (cfg *identityConfig) createUserHandler(c *gin.Context) {
 		Email:        email,
 		Role:         unhashed_user.Role,
 	}
-	if err = cfg.queries.InsertUser(c, params); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "error while making db query",
-		})
+	if err := cfg.queries.InsertUser(c, params); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error while making db query"})
 		return
 	}
+
 	c.JSON(http.StatusCreated, nil)
 }
 

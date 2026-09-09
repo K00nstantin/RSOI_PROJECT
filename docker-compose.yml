@@ -1,125 +1,214 @@
 services:
-  postgres:
-    image: postgres:13
+  # ---------- Kafka ----------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
     environment:
-      POSTGRES_USER: program
-      POSTGRES_PASSWORD: test
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM1Tk"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    restart: unless-stopped
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  # ---------- Базы данных ----------
+  postgres_identity:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: identity_user
+      POSTGRES_PASSWORD: identity_pass
+      POSTGRES_DB: identitydb
+    ports:
+      - "5435:5432"
+    volumes:
+      - identity_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  postgres_library:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: library_user
+      POSTGRES_PASSWORD: library_pass
+      POSTGRES_DB: librarydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - library_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  postgres_reservation:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: reservation_user
+      POSTGRES_PASSWORD: reservation_pass
+      POSTGRES_DB: reservationdb
     ports:
       - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U program"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
     volumes:
-      - db-data:/var/lib/postgresql/data
-      - ./postgres/scripts/db-v4.sql:/docker-entrypoint-initdb.d/init.sql
+      - reservation_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
-  rating:
-    image: rating-service:latest
-    build:
-      context: .
-      dockerfile: cmd/rating/Dockerfile
-    container_name: rating-service
-    ports:
-      - "8050:8050"
-    depends_on:
-      postgres:
-        condition: service_healthy
+  postgres_rating:
+    image: postgres:15
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: ratings
-    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./rating"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050/manage/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
+      POSTGRES_USER: rating_user
+      POSTGRES_PASSWORD: rating_pass
+      POSTGRES_DB: ratingdb
+    ports:
+      - "5434:5432"
+    volumes:
+      - rating_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ---------- Микросервисы ----------
+  identity:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.identity
+    environment:
+      DB_URL: postgres://identity_user:identity_pass@postgres_identity:5432/identitydb?sslmode=disable
+      IDENTITY_DB_URL: postgres://identity_user:identity_pass@postgres_identity:5432/identitydb?sslmode=disable
+      GATEWAY_SERVICE_URL: http://gateway:8080
+      IDENTITY_SERVICE_URL: http://identity:8090
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: library-events
+    ports:
+      - "8090:8090"
+    depends_on:
+      - postgres_identity
+      - kafka
+    restart: unless-stopped
 
   library:
-    image: library-service:latest
     build:
-      context: .
-      dockerfile: cmd/library/Dockerfile
-    container_name: library-service
+      context: ./backend
+      dockerfile: Dockerfile.library
+    environment:
+      DB_URL: postgres://library_user:library_pass@postgres_library:5432/librarydb?sslmode=disable
+      LIBRARIES_DB_URL: postgres://library_user:library_pass@postgres_library:5432/librarydb?sslmode=disable
+      IDENTITY_SERVICE_URL: http://identity:8090
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: library-events
     ports:
       - "8060:8060"
     depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: libraries
-    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./library"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8060/manage/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
+      - postgres_library
+      - identity
+      - kafka
+    restart: unless-stopped
 
   reservation:
-    image: reservation-service:latest
     build:
-      context: .
-      dockerfile: cmd/reservation/Dockerfile
-    container_name: reservation-service
+      context: ./backend
+      dockerfile: Dockerfile.reservation
+    environment:
+      DB_URL: postgres://reservation_user:reservation_pass@postgres_reservation:5432/reservationdb?sslmode=disable
+      RESERVATIONS_DB_URL: postgres://reservation_user:reservation_pass@postgres_reservation:5432/reservationdb?sslmode=disable
+      IDENTITY_SERVICE_URL: http://identity:8090
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: library-events
     ports:
       - "8070:8070"
     depends_on:
-      postgres:
-        condition: service_healthy
-      rating:
-        condition: service_healthy
+      - postgres_reservation
+      - identity
+      - kafka
+    restart: unless-stopped
+
+  rating:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rating
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: reservations
-    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./reservation"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8070/manage/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
+      DB_URL: postgres://rating_user:rating_pass@postgres_rating:5432/ratingdb?sslmode=disable
+      RATINGS_DB_URL: postgres://rating_user:rating_pass@postgres_rating:5432/ratingdb?sslmode=disable
+      IDENTITY_SERVICE_URL: http://identity:8090
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: library-events
+    ports:
+      - "8050:8050"
+    depends_on:
+      - postgres_rating
+      - identity
+      - kafka
+    restart: unless-stopped
 
   gateway:
-    image: gateway-service:latest
     build:
-      context: .
-      dockerfile: cmd/gateway/Dockerfile
-    container_name: gateway-service
+      context: ./backend
+      dockerfile: Dockerfile.gateway
+    environment:
+      LIBRARY_SERVICE_URL: http://library:8060
+      RESERVATION_SERVICE_URL: http://reservation:8070
+      RATING_SERVICE_URL: http://rating:8050
+      IDENTITY_SERVICE_URL: http://identity:8090
+      STATISTICS_SERVICE_URL: http://statistics:8091
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: library-events
     ports:
       - "8080:8080"
     depends_on:
-      rating:
-        condition: service_healthy
-      library:
-        condition: service_healthy
-      reservation:
-        condition: service_healthy
+      - library
+      - reservation
+      - rating
+      - identity
+      - kafka
+    restart: unless-stopped
+
+  statistics:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.statistics
     environment:
-      RATING_SERVICE_URL: http://rating:8050
-      LIBRARY_SERVICE_URL: http://library:8060
-      RESERVATION_SERVICE_URL: http://reservation:8070
-    command: ["sh", "-c", "./wait-for.sh rating:8050 library:8060 reservation:8070 -- ./gateway"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/manage/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: library-events
+      IDP_URL: http://identity:8090
+    ports:
+      - "8091:8091"
+    depends_on:
+      - kafka
+      - identity
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://gateway:8080/api/v1
+      - REACT_APP_IDP_URL=http://identity:8090
+    depends_on:
+      - gateway
+      - identity
+    restart: unless-stopped
+
+  kafdrop:
+    image: obsidiandynamics/kafdrop
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERCONNECT: kafka:9092
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
 
 volumes:
-  db-data:
-    driver: local
+  identity_data:
+  library_data:
+  reservation_data:
+  rating_data:
+  kafka_data:

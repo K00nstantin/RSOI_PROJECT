@@ -1,0 +1,7 @@
+frontend/node_modules
+frontend/build
+backend/.env
+.git
+.DS_Store
+*.log
+*.tmp

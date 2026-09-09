@@ -9,6 +9,21 @@ import (
 	"context"
 )
 
+const createUser = `-- name: CreateUser :exec
+INSERT INTO rating (username, stars)
+VALUES ($1, $2)
+`
+
+type CreateUserParams struct {
+	Username string `json:"username"`
+	Stars    int32  `json:"stars"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
+	_, err := q.db.ExecContext(ctx, createUser, arg.Username, arg.Stars)
+	return err
+}
+
 const getUserStars = `-- name: GetUserStars :one
 SELECT stars FROM rating
 WHERE username = $1

@@ -2,8 +2,8 @@ package main
 
 import (
 	"RSOI_PROJECT/internal/auth"
+	"RSOI_PROJECT/internal/models"
 	"RSOI_PROJECT/internal/reservationdb"
-	"RSOI_PROJECT/models"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -29,7 +29,6 @@ type reservationConfig struct {
 func main() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("error loading .env")
-		return
 	}
 	db_url := os.Getenv("RESERVATIONS_DB_URL")
 	db, err := sql.Open("postgres", db_url)

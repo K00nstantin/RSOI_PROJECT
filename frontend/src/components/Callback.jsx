@@ -17,7 +17,18 @@ function Callback() {
                 return;
             }
             if (token) {
-                sessionStorage.setItem('access_token', token);
+                // Декодируем JWT, чтобы извлечь роль
+                try {
+                    const payloadBase64 = token.split('.')[1];
+                    const payloadJson = atob(payloadBase64);
+                    const payload = JSON.parse(payloadJson);
+                    const role = payload.role || 'User'; // по умолчанию User
+                    sessionStorage.setItem('access_token', token);
+                    sessionStorage.setItem('role', role);
+                } catch (e) {
+                    // Если не удалось декодировать, сохраняем только токен
+                    sessionStorage.setItem('access_token', token);
+                }
                 sessionStorage.removeItem('oauth_state');
                 navigate('/');
             } else {

@@ -2,8 +2,9 @@ package main
 
 import (
 	"RSOI_PROJECT/internal/auth"
+	"RSOI_PROJECT/internal/kafka"
+	"RSOI_PROJECT/internal/models"
 	"RSOI_PROJECT/internal/reservationdb"
-	"RSOI_PROJECT/models"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -24,7 +25,9 @@ type gatewayConfig struct {
 	reservationServiceURL string
 	ratingServiceURL      string
 	identityServiceURL    string
+	statisticsServiceURL  string
 	publicKey             interface{}
+	kafkaProducer         *kafka.Producer
 }
 
 func main() {
@@ -32,6 +35,12 @@ func main() {
 	if err != nil {
 		fmt.Println("error loading .env")
 	}
+
+	producer, err := kafka.NewProducer([]string{os.Getenv("KAFKA_BROKERS")}, "library-events")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer producer.Close()
 
 	myClient := http.Client{
 		Timeout: 10 * time.Second,
@@ -43,6 +52,8 @@ func main() {
 		reservationServiceURL: os.Getenv("RESERVATION_SERVICE_URL"),
 		ratingServiceURL:      os.Getenv("RATING_SERVICE_URL"),
 		identityServiceURL:    os.Getenv("IDENTITY_SERVICE_URL"),
+		statisticsServiceURL:  os.Getenv("STATISTICS_SERVICE_URL"),
+		kafkaProducer:         producer,
 	}
 	if err = auth_cfg.LoadJWKS(cfg.identityServiceURL); err != nil {
 		log.Fatalf("Failed to load JWKS: %v", err)
@@ -55,6 +66,8 @@ func main() {
 	r.POST("/api/v1/reservations", cfg.createReservationHandler)
 	r.POST("/api/v1/reservations/:reservationUid/return", cfg.returnBookHandler)
 	r.GET("/api/v1/rating", cfg.getRatingHandler)
+	r.POST("/api/v1/createUser", cfg.createUserHandler)
+	r.GET("/api/v1/stats/report", cfg.statsReportHandler)
 	r.GET("/manage/health", healthCheck)
 
 	r.Run(":8080")
@@ -69,6 +82,7 @@ func healthCheck(c *gin.Context) {
 func (cfg *gatewayConfig) getLibrariesHandler(c *gin.Context) {
 	query_params := c.Request.URL.Query().Encode()
 	city := c.Request.URL.Query().Get("city")
+	page := c.Query("page")
 	if city == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "Missing required query parameter: city",
@@ -108,6 +122,15 @@ func (cfg *gatewayConfig) getLibrariesHandler(c *gin.Context) {
 		})
 	}
 
+	username := c.GetString("username")
+	if username != "" {
+		event := models.NewEvent(username, "search_libraries",
+			fmt.Sprintf("city=%s, page=%d", city, page))
+		if err := cfg.kafkaProducer.SendEvent(event); err != nil {
+			log.Printf("Failed to send event: %v", err)
+		}
+	}
+
 	c.Data(http.StatusOK, "application/json", body)
 }
 
@@ -139,6 +162,15 @@ func (cfg *gatewayConfig) getLibraryBooksHandler(c *gin.Context) {
 			"err":   err,
 		})
 		return
+	}
+
+	username := c.GetString("username")
+	if username != "" {
+		event := models.NewEvent(username, "view_books",
+			fmt.Sprintf("libraryUid=%s", libraryUid))
+		if err := cfg.kafkaProducer.SendEvent(event); err != nil {
+			log.Printf("Failed to send event: %v", err)
+		}
 	}
 
 	c.Data(http.StatusOK, "application/json", body)
@@ -208,7 +240,11 @@ func (cfg *gatewayConfig) getReservationsHandler(c *gin.Context) {
 			Book:           bk_dto,
 		})
 	}
-
+	username := c.GetString("username")
+	if username != "" {
+		event := models.NewEvent(username, "view_reservations", "")
+		cfg.kafkaProducer.SendEvent(event)
+	}
 	c.JSON(http.StatusOK, final_resp)
 }
 
@@ -408,6 +444,13 @@ func (cfg *gatewayConfig) createReservationHandler(c *gin.Context) {
 		Library:        library,
 		Rating:         rating,
 	}
+
+	username := c.GetString("username")
+	if username != "" {
+		event := models.NewEvent(username, "book_rent",
+			fmt.Sprintf("bookUid=%s, libraryUid=%s", req_body.BookUid, req_body.LibraryUid))
+		cfg.kafkaProducer.SendEvent(event)
+	}
 	c.JSON(http.StatusOK, response)
 
 }
@@ -603,6 +646,12 @@ func (cfg *gatewayConfig) returnBookHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	if username != "" {
+		event := models.NewEvent(username, "book_return",
+			fmt.Sprintf("reservationUid=%s", reservationUid_str))
+		cfg.kafkaProducer.SendEvent(event)
+	}
 	c.JSON(http.StatusNoContent, nil)
 
 }
@@ -684,5 +733,110 @@ func (cfg *gatewayConfig) getRatingHandler(c *gin.Context) {
 		})
 		return
 	}
+	username := c.GetString("username")
+	if username != "" {
+		event := models.NewEvent(username, "view_rating", "")
+		cfg.kafkaProducer.SendEvent(event)
+	}
 	c.Data(http.StatusOK, "application/json", body)
+}
+
+func (cfg *gatewayConfig) createUserHandler(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
+		Role     string `json:"role"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+
+	targetURL := cfg.identityServiceURL + "/api/v1/createUser"
+	httpReq, err := http.NewRequest("POST", targetURL, bytes.NewReader(body))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	httpReq.Header = c.Request.Header.Clone()
+	httpReq.Header.Set("Authorization", c.GetHeader("Authorization"))
+
+	resp, err := cfg.client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read response"})
+		return
+	}
+
+	if resp.StatusCode == http.StatusCreated {
+		go cfg.initRatingForUser(req.Username, c.GetHeader("Authorization"))
+	}
+
+	c.Data(resp.StatusCode, "application/json", respBody)
+}
+
+func (cfg *gatewayConfig) initRatingForUser(username, authHeader string) {
+	initReq := struct {
+		Username string `json:"username"`
+		Stars    int32  `json:"stars"`
+	}{
+		Username: username,
+		Stars:    25,
+	}
+	body, _ := json.Marshal(initReq)
+	url := cfg.ratingServiceURL + "/api/v1/rating/init"
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	if resp, err := client.Do(req); err == nil {
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			log.Printf("Rating init failed with status %d for user %s", resp.StatusCode, username)
+		}
+	} else {
+		log.Printf("Failed to init rating for user %s: %v", username, err)
+	}
+}
+
+func (cfg *gatewayConfig) statsReportHandler(c *gin.Context) {
+	targetURL := cfg.statisticsServiceURL + "/api/v1/stats/report"
+
+	req, err := http.NewRequest(c.Request.Method, targetURL, c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
+		return
+	}
+
+	req.Header = c.Request.Header.Clone()
+	req.Header.Set("Authorization", c.GetHeader("Authorization"))
+
+	resp, err := cfg.client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to reach statistics service"})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read response"})
+		return
+	}
+
+	c.Data(resp.StatusCode, "application/json", body)
 }

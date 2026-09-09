@@ -3,7 +3,7 @@ package main
 import (
 	"RSOI_PROJECT/internal/auth"
 	"RSOI_PROJECT/internal/librarydb"
-	"RSOI_PROJECT/models"
+	"RSOI_PROJECT/internal/models"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -176,7 +176,7 @@ func (cfg *libraryConfig) getLibraryBooks(c *gin.Context) {
 			Author:         row.Author.String,
 			Genre:          row.Genre.String,
 			Condition:      row.Condition.String,
-			AvaliableCount: row.AvailableCount,
+			AvailableCount: row.AvailableCount,
 		})
 	}
 
@@ -187,7 +187,7 @@ func (cfg *libraryConfig) getLibraryBooks(c *gin.Context) {
 			if show_all == true {
 				paginated_books = append(paginated_books, bk)
 			} else {
-				if bk.AvaliableCount > 0 {
+				if bk.AvailableCount > 0 {
 					paginated_books = append(paginated_books, bk)
 				}
 			}

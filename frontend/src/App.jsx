@@ -8,6 +8,7 @@ import Rating from './components/Rating';
 import CreateUser from './components/CreateUser';
 import Callback from './components/Callback';
 import LoginButton from './components/LoginButton';
+import Statistics from './components/Statistics';
 import './App.css';
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
                     <Route path="/create-user" element={<CreateUser />} />
                     <Route path="/callback" element={<Callback />} />
                     <Route path="/login" element={<LoginButton />} />
+                    <Route path="/stats" element={<Statistics />} />
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
             </div>

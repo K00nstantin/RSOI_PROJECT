@@ -1,0 +1,26 @@
+# ---- Сборка приложения ----
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/statistics ./cmd/statistics
+COPY internal ./internal
+
+RUN CGO_ENABLED=0 GOOS=linux go build -p 1 -o /go/bin/app ./cmd/statistics
+
+# ---- Финальный образ ----
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /go/bin/app /app
+
+# Копируем entrypoint (он будет просто запускать приложение, так как DB_URL не задана)
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8091
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/app"]

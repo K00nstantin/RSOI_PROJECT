@@ -6,3 +6,7 @@ WHERE username = $1;
 UPDATE rating
 SET stars = stars + $1
 WHERE username = $2;
+
+-- name: CreateUser :exec
+INSERT INTO rating (username, stars)
+VALUES ($1, $2);

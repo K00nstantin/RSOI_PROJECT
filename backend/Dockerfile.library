@@ -1,0 +1,35 @@
+# ---- Сборка приложения ----
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/library ./cmd/library
+COPY internal ./internal
+
+RUN CGO_ENABLED=0 GOOS=linux go build -p 1 -o /go/bin/app ./cmd/library
+
+# ---- Финальный образ ----
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates postgresql-client
+
+# Устанавливаем goose (бинарник)
+ADD https://github.com/pressly/goose/releases/latest/download/goose_linux_x86_64 /usr/local/bin/goose
+RUN chmod +x /usr/local/bin/goose
+
+COPY --from=builder /go/bin/app /app
+
+# Копируем миграции для библиотеки
+COPY postgres/schema/library_service /migrations
+
+COPY postgres/scripts/seed.sql /seed.sql
+
+# Копируем общий entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8060
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/app"]
