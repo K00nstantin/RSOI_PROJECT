@@ -29,3 +29,9 @@ WHERE library_id = (SELECT id FROM library WHERE library_uid = $1)
 UPDATE books
 SET condition = $1
 WHERE book_uid = $2;
+
+-- name: IncreaseBookCount :exec
+UPDATE library_books
+SET available_count = available_count + 1
+WHERE library_id = (SELECT id FROM library WHERE library_uid = $1)
+  AND book_id = (SELECT id FROM books WHERE book_uid = $2);

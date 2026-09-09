@@ -182,3 +182,20 @@ func (q *Queries) GetLibraryBooks(ctx context.Context, libraryUid uuid.UUID) ([]
 	}
 	return items, nil
 }
+
+const increaseBookCount = `-- name: IncreaseBookCount :exec
+UPDATE library_books
+SET available_count = available_count + 1
+WHERE library_id = (SELECT id FROM library WHERE library_uid = $1)
+  AND book_id = (SELECT id FROM books WHERE book_uid = $2)
+`
+
+type IncreaseBookCountParams struct {
+	LibraryUid uuid.UUID `json:"library_uid"`
+	BookUid    uuid.UUID `json:"book_uid"`
+}
+
+func (q *Queries) IncreaseBookCount(ctx context.Context, arg IncreaseBookCountParams) error {
+	_, err := q.db.ExecContext(ctx, increaseBookCount, arg.LibraryUid, arg.BookUid)
+	return err
+}

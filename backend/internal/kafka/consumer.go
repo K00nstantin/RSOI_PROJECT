@@ -20,8 +20,7 @@ func NewConsumerGroup(brokers []string, groupID, topic string) (sarama.ConsumerG
 	config := sarama.NewConfig()
 	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
 	config.Consumer.Offsets.Initial = sarama.OffsetOldest
-	// Устанавливаем версию протокола
-	config.Version = sarama.V3_5_0_0 // или sarama.V2_8_0_0
+	config.Version = sarama.V3_5_0_0
 
 	consumerGroup, err := sarama.NewConsumerGroup(brokers, groupID, config)
 	if err != nil {

@@ -16,8 +16,7 @@ func NewProducer(brokers []string, topic string) (*Producer, error) {
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Retry.Max = 5
 	config.Producer.Return.Successes = true
-	// Устанавливаем версию протокола (совместима с Kafka 3.5+)
-	config.Version = sarama.V3_5_0_0 // или V2_8_0_0
+	config.Version = sarama.V3_5_0_0
 
 	producer, err := sarama.NewSyncProducer(brokers, config)
 	if err != nil {

@@ -316,6 +316,15 @@ func (cfg *libraryConfig) increaseBookCount(c *gin.Context) {
 	bookUid, err := uuid.Parse(bookUidStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid book id",
+			"err":   err,
+		})
+		return
+	}
+	libraryUidStr := c.Param("libraryUid")
+	libraryUid, err := uuid.Parse(libraryUidStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid library id",
 			"err":   err,
 		})
@@ -367,6 +376,18 @@ func (cfg *libraryConfig) increaseBookCount(c *gin.Context) {
 		})
 		return
 	}
+	increase_params := librarydb.IncreaseBookCountParams{
+		LibraryUid: libraryUid,
+		BookUid:    bookUid,
+	}
+	if err := cfg.queries.IncreaseBookCount(c, increase_params); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to increase book count",
+			"err":   err,
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"delta": delta,
 	})
