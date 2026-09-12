@@ -57,12 +57,18 @@ func main() {
 	server.GET("/api/v1/rating", cfg.getRating)
 	server.PUT("/api/v1/rating", cfg.updateRating)
 	server.POST("/api/v1/rating/init", cfg.initRating)
-	// server.GET("/manage/health", healthCheck)
+	server.GET("/manage/health", healthCheck)
 
 	log.Println("Rating service starting on :8050")
 	if err := server.Run(":8050"); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func healthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status": "up",
+	})
 }
 
 func (cfg *ratingConfig) getRating(c *gin.Context) {

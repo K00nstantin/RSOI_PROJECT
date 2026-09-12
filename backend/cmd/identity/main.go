@@ -4,7 +4,6 @@ import (
 	"RSOI_PROJECT/internal/auth"
 	"RSOI_PROJECT/internal/identitydb"
 	"RSOI_PROJECT/internal/models"
-	"crypto/rand"
 	"crypto/rsa"
 	"database/sql"
 	"embed"
@@ -95,8 +94,12 @@ func (cfg *identityConfig) authorizationHandler(c *gin.Context) {
 	scope := c.Query("scope")
 	state := c.Query("state")
 
+	allowedRedirect := os.Getenv("ALLOWED_REDIRECT_URI")
+	if allowedRedirect == "" {
+		allowedRedirect = "http://localhost:3000/callback"
+	}
 	allowed_clients := map[string]string{
-		"SPA Application": "http://localhost:3000/callback",
+		"SPA Application": allowedRedirect,
 	}
 	if response_type != "token" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -135,14 +138,18 @@ func (cfg *identityConfig) authorizationHandler(c *gin.Context) {
 }
 
 func (cfg *identityConfig) initKeys() error {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privBytes, err := os.ReadFile("/keys/private.pem")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read private key: %w", err)
 	}
-	publicKey := privateKey.PublicKey
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(privBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse private key: %w", err)
+	}
 	cfg.privateKey = privateKey
-	cfg.publicKey = &publicKey
-	key, err := jwk.FromRaw(publicKey)
+	cfg.publicKey = &privateKey.PublicKey
+
+	key, err := jwk.FromRaw(privateKey.PublicKey)
 	if err != nil {
 		return err
 	}

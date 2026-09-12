@@ -1,0 +1,18 @@
+{{- define "charts.name" -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "charts.fullname" -}}
+{{- printf "%s" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "charts.labels" -}}
+app: {{ include "charts.name" . }}
+app.kubernetes.io/name: {{ include "charts.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
+{{- define "charts.selectorLabels" -}}
+app: {{ include "charts.name" . }}
+{{- end -}}

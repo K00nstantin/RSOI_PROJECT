@@ -1,0 +1,35 @@
+image:
+  repository: cr.yandex/crpvpcj1bo0olehbfgsr/gateway
+  tag: v1
+
+service:
+  port: 8080
+  targetPort: 8080
+
+env:
+  - name: LIBRARY_SERVICE_URL
+    value: "http://library:8060"
+  - name: RESERVATION_SERVICE_URL
+    value: "http://reservation:8070"
+  - name: RATING_SERVICE_URL
+    value: "http://rating:8050"
+  - name: IDENTITY_SERVICE_URL
+    value: "http://identity:8090"
+  - name: STATISTICS_SERVICE_URL
+    value: "http://statistics:8091"
+  - name: KAFKA_BROKERS
+    value: "kafka.messaging.svc.cluster.local:9092"
+
+livenessProbe:
+  enabled: true
+  path: /manage/health
+readinessProbe:
+  enabled: true
+  path: /manage/health
+
+ingress:
+  enabled: true
+  className: nginx
+  host: "gateway.81.26.189.75.nip.io"
+  path: /
+  pathType: Prefix

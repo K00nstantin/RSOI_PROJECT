@@ -61,12 +61,18 @@ func main() {
 	server.GET("/api/v1/libraries/:libraryUid/books/:bookUid", cfg.getLibraryBook)
 	server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/decrease", cfg.decreaseBookCount)
 	server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/increase", cfg.increaseBookCount)
-	// server.GET("/manage/health", healthCheck)
+	server.GET("/manage/health", healthCheck)
 
 	log.Println("Library service starting on port:8060")
 	if err := server.Run(":8060"); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func healthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status": "up",
+	})
 }
 
 func (cfg *libraryConfig) getLibraries(c *gin.Context) {

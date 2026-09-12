@@ -1,0 +1,47 @@
+image:
+  repository: cr.yandex/crpvpcj1bo0olehbfgsr/identity
+  tag: v4
+
+service:
+  port: 8090
+  targetPort: 8090
+
+env:
+  - name: IDENTITY_DB_URL
+    value: "postgres://program:test@postgres.db.svc.cluster.local:5432/identitydb?sslmode=disable"
+  - name: DB_URL
+    value: "postgres://program:test@postgres.db.svc.cluster.local:5432/identitydb?sslmode=disable"
+  - name: GATEWAY_SERVICE_URL
+    value: "http://gateway:8080"
+  - name: IDENTITY_SERVICE_URL
+    value: "http://identity:8090"
+  - name: ALLOWED_REDIRECT_URI
+    value: "http://app.81.26.189.75.nip.io/callback"
+  - name: KAFKA_BROKERS
+    value: "kafka.messaging.svc.cluster.local:9092"
+  - name: KAFKA_TOPIC
+    value: "library-events"
+
+extraVolumes:
+  - name: identity-keys
+    secret:
+      secretName: identity-keys
+
+extraVolumeMounts:
+  - name: identity-keys
+    mountPath: /keys
+    readOnly: true
+
+livenessProbe:
+  enabled: true
+  path: /api/v1/jwks
+readinessProbe:
+  enabled: true
+  path: /api/v1/jwks
+
+ingress:
+  enabled: true
+  className: nginx
+  host: "identity.81.26.189.75.nip.io"
+  path: /
+  pathType: Prefix

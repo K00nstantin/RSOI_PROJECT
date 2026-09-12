@@ -1,0 +1,14 @@
+image:
+  repository: cr.yandex/crpvpcj1bo0olehbfgsr/frontend
+  tag: v4
+
+service:
+  port: 80
+  targetPort: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: "app.81.26.189.75.nip.io"
+  path: /
+  pathType: Prefix

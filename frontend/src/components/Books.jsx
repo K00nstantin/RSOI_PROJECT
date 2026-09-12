@@ -11,6 +11,10 @@ function Books() {
     const navigate = useNavigate();
 
     useEffect(() => {
+        const token = sessionStorage.getItem('access_token');
+        if (!token) {
+            return;
+        }
         fetchBooks();
     }, [libraryUid, page, showAll]);
 

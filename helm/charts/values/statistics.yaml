@@ -1,0 +1,22 @@
+image:
+  repository: cr.yandex/crpvpcj1bo0olehbfgsr/statistics
+  tag: v1
+
+service:
+  port: 8091
+  targetPort: 8091
+
+env:
+  - name: KAFKA_BROKERS
+    value: "kafka.messaging.svc.cluster.local:9092"
+  - name: KAFKA_TOPIC
+    value: "library-events"
+  - name: IDP_URL
+    value: "http://identity:8090"
+
+livenessProbe:
+  enabled: true
+  path: /manage/health
+readinessProbe:
+  enabled: true
+  path: /manage/health

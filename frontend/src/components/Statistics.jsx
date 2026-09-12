@@ -1,4 +1,3 @@
-// frontend/src/components/Statistics.jsx
 import { useState, useEffect } from 'react';
 import api from '../api/client';
 
@@ -8,9 +7,13 @@ function Statistics() {
     const [error, setError] = useState(null);
 
     useEffect(() => {
+        const token = sessionStorage.getItem('access_token');
+        if (!token) {
+            setLoading(false);
+            return;
+        }
         const fetchStats = async () => {
             try {
-                // Запрос через gateway (если добавите прокси) или напрямую в statistics
                 const response = await api.get('/stats/report');
                 setStats(response.data);
             } catch (err) {

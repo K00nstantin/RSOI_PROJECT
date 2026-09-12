@@ -5,6 +5,10 @@ function Rating() {
     const [stars, setStars] = useState(null);
 
     useEffect(() => {
+        const token = sessionStorage.getItem('access_token');
+        if (!token) {
+            return;
+        }
         fetchRating();
     }, []);
 

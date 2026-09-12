@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: 'http://localhost:8080/api/v1',
+    baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1',
 });
 
 api.interceptors.request.use(config => {
@@ -15,10 +15,8 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
     response => response,
     error => {
-        if (error.response?.status === 401) {
-            sessionStorage.removeItem('access_token');
-            window.location.href = '/login';
-        }
+        // Не редиректим автоматически и не удаляем токен —
+        // пусть компонент сам решает, что делать с 401.
         return Promise.reject(error);
     }
 );

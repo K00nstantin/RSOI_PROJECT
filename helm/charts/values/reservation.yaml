@@ -1,0 +1,19 @@
+image:
+  repository: cr.yandex/crpvpcj1bo0olehbfgsr/reservation
+  tag: v1
+
+service:
+  port: 8070
+  targetPort: 8070
+
+env:
+  - name: RESERVATIONS_DB_URL
+    value: "postgres://program:test@postgres.db.svc.cluster.local:5432/reservationdb?sslmode=disable"
+  - name: DB_URL
+    value: "postgres://program:test@postgres.db.svc.cluster.local:5432/reservationdb?sslmode=disable"
+  - name: IDENTITY_SERVICE_URL
+    value: "http://identity:8090"
+  - name: KAFKA_BROKERS
+    value: "kafka.messaging.svc.cluster.local:9092"
+  - name: KAFKA_TOPIC
+    value: "library-events"

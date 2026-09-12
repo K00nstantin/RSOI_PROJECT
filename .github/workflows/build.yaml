@@ -1,0 +1,210 @@
+name: Build & Deploy RSOI Project to Yandex Cloud
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ migrations ]
+  pull_request:
+    branches: [ migrations ]
+
+env:
+  REGISTRY_ID: ${{ vars.REGISTRY_ID }}          # ID Container Registry (crpvpcj1bo0olehbfgsr)
+  K8S_CLUSTER_ID: ${{ vars.K8S_CLUSTER_ID }}    # ID Managed Kubernetes кластера (cat9nvhkpkisukce7ob0)
+  FOLDER_ID: ${{ vars.FOLDER_ID }}              # b1gssns86hdr2dph1gcc
+  NAMESPACE: app
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Шаг 1. Установка yc CLI
+      - name: Install yc CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash -s -- -n
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+        shell: bash
+
+      # Шаг 2. Настройка yc и Docker
+      - name: Configure yc and Docker
+        run: |
+          cat > key.json <<'EOFJSON'
+          ${{ secrets.YANDEX_CLOUD_SA_KEY }}
+          EOFJSON
+          yc config profile create sa-profile
+          yc config set service-account-key key.json
+          yc config set folder-id ${{ vars.FOLDER_ID }}
+          yc container registry configure-docker
+        shell: bash
+
+      # Шаг 3. Сборка backend (go build)
+      - name: Build backend
+        run: |
+          cd backend
+          go mod download
+          go build ./...
+        shell: bash
+
+      # Шаг 4. Сборка frontend (npm build)
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+        shell: bash
+
+      # Шаг 5. Сборка и публикация backend-образов
+      - name: Build and push backend images
+        run: |
+          cd backend
+          for service in gateway identity library rating reservation statistics; do
+            echo "=== Building $service ==="
+            docker build \
+              -t cr.yandex/${{ env.REGISTRY_ID }}/${service}:latest \
+              -t cr.yandex/${{ env.REGISTRY_ID }}/${service}:${IMAGE_TAG} \
+              -f ./Dockerfile.${service} .
+            docker push cr.yandex/${{ env.REGISTRY_ID }}/${service}:latest
+            docker push cr.yandex/${{ env.REGISTRY_ID }}/${service}:${IMAGE_TAG}
+          done
+        shell: bash
+
+      # Шаг 6. Сборка и публикация frontend-образа
+      - name: Build and push frontend image
+        run: |
+          cd frontend
+          docker build \
+            --build-arg REACT_APP_API_URL=http://gateway.81.26.189.75.nip.io/api/v1 \
+            --build-arg REACT_APP_IDP_URL=http://identity.81.26.189.75.nip.io \
+            -t cr.yandex/${{ env.REGISTRY_ID }}/frontend:latest \
+            -t cr.yandex/${{ env.REGISTRY_ID }}/frontend:${IMAGE_TAG} \
+            .
+          docker push cr.yandex/${{ env.REGISTRY_ID }}/frontend:latest
+          docker push cr.yandex/${{ env.REGISTRY_ID }}/frontend:${IMAGE_TAG}
+        shell: bash
+
+      # Шаг 7. Получение kubeconfig
+      - name: Get k8s credentials
+        run: |
+          yc managed-kubernetes cluster get-credentials ${{ env.K8S_CLUSTER_ID }} --external --force
+          kubectl get nodes
+        shell: bash
+
+      # Шаг 8. Создание namespace и секретов, если их нет
+      - name: Ensure namespace and secrets
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+          # imagePullSecret для доступа к Container Registry
+          kubectl create secret docker-registry yc-registry-secret \
+            --namespace ${{ env.NAMESPACE }} \
+            --docker-server=cr.yandex \
+            --docker-username=json_key \
+            --docker-password="$(cat key.json)" \
+            --docker-email=unused \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Ключи identity (фиксированный RSA)
+          if [ -n "${{ secrets.IDENTITY_PRIVATE_PEM }}" ]; then
+            echo "${{ secrets.IDENTITY_PRIVATE_PEM }}" > /tmp/private.pem
+            echo "${{ secrets.IDENTITY_PUBLIC_PEM }}"  > /tmp/public.pem
+            kubectl create secret generic identity-keys \
+              --namespace ${{ env.NAMESPACE }} \
+              --from-file=private.pem=/tmp/private.pem \
+              --from-file=public.pem=/tmp/public.pem \
+              --dry-run=client -o yaml | kubectl apply -f -
+          else
+            echo "IDENTITY_PRIVATE_PEM not set, skipping identity-keys creation"
+          fi
+        shell: bash
+
+      # Шаг 9. Деплой инфраструктуры (Postgres, Kafka) — если ещё не развёрнуты
+      - name: Apply infrastructure manifests
+        run: |
+          kubectl create namespace db --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace messaging --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/postgres/postgres.yaml || true
+          kubectl apply -f k8s/kafka/kafka.yaml || true
+          kubectl apply -f k8s/postgres/init-job.yaml || true
+        shell: bash
+        continue-on-error: true
+
+      # Шаг 10. Деплой сервисов приложения через универсальный чарт
+      - name: Deploy application services
+        run: |
+          helm upgrade --install identity ./helm/charts \
+            -f ./helm/charts/values/identity.yaml \
+            --set image.tag=${IMAGE_TAG} \
+            -n ${{ env.NAMESPACE }} --wait --timeout 10m
+
+          helm upgrade --install library ./helm/charts \
+            -f ./helm/charts/values/library.yaml \
+            --set image.tag=${IMAGE_TAG} \
+            -n ${{ env.NAMESPACE }} --wait --timeout 10m
+
+          helm upgrade --install rating ./helm/charts \
+            -f ./helm/charts/values/rating.yaml \
+            --set image.tag=${IMAGE_TAG} \
+            -n ${{ env.NAMESPACE }} --wait --timeout 10m
+
+          helm upgrade --install reservation ./helm/charts \
+            -f ./helm/charts/values/reservation.yaml \
+            --set image.tag=${IMAGE_TAG} \
+            -n ${{ env.NAMESPACE }} --wait --timeout 10m
+
+          helm upgrade --install statistics ./helm/charts \
+            -f ./helm/charts/values/statistics.yaml \
+            --set image.tag=${IMAGE_TAG} \
+            -n ${{ env.NAMESPACE }} --wait --timeout 10m
+
+          helm upgrade --install gateway ./helm/charts \
+            -f ./helm/charts/values/gateway.yaml \
+            --set image.tag=${IMAGE_TAG} \
+            -n ${{ env.NAMESPACE }} --wait --timeout 10m
+
+          helm upgrade --install frontend ./helm/charts \
+            -f ./helm/charts/values/frontend.yaml \
+            --set image.tag=${IMAGE_TAG} \
+            -n ${{ env.NAMESPACE }} --wait --timeout 10m
+        shell: bash
+
+      # Шаг 11. Ожидание готовности подов
+      - name: Wait for all pods
+        run: |
+          kubectl wait --for=condition=ready pod --all \
+            -n ${{ env.NAMESPACE }} --timeout=600s
+        shell: bash
+
+      # Шаг 12. Диагностика после успешного деплоя
+      - name: Show deployed resources
+        if: success()
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+          echo "=== Deployments and images ==="
+          kubectl get deploy -n ${{ env.NAMESPACE }} \
+            -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image
+          echo "=== Ingress ==="
+          kubectl get ingress -n ${{ env.NAMESPACE }}
+          echo "=== Helm releases ==="
+          helm list -n ${{ env.NAMESPACE }}
+        shell: bash
+
+      # Шаг 13. Диагностика при сбое
+      - name: Debug on failure
+        if: failure()
+        run: |
+          echo "=== Nodes ==="
+          kubectl get nodes -o wide || true
+          echo "=== Helm releases ==="
+          helm list -A || true
+          echo "=== Pods ==="
+          kubectl get pods -A -o wide || true
+          echo "=== Describe pods in app ==="
+          kubectl describe pods -n ${{ env.NAMESPACE }} || true
+          echo "=== Events ==="
+          kubectl get events -n ${{ env.NAMESPACE }} --sort-by=.lastTimestamp | tail -100 || true
+        shell: bash

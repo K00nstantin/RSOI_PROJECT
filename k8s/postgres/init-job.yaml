@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-init
+  namespace: db
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: init
+        image: postgres:16
+        env:
+        - name: PGHOST
+          value: postgres.db.svc.cluster.local
+        - name: PGUSER
+          value: program
+        - name: PGPASSWORD
+          value: test
+        - name: PGDATABASE
+          value: postgres
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Waiting for Postgres..."
+          until pg_isready -h $PGHOST -U $PGUSER > /dev/null 2>&1; do
+            sleep 2
+          done
+          echo "Postgres is ready. Creating databases..."
+          psql -c "CREATE DATABASE identitydb OWNER program;" || true
+          psql -c "CREATE DATABASE librarydb OWNER program;" || true
+          psql -c "CREATE DATABASE ratingdb OWNER program;" || true
+          psql -c "CREATE DATABASE reservationdb OWNER program;" || true
+          echo "Databases created:"
+          psql -c "\l"

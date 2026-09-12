@@ -1,0 +1,31 @@
+image:
+  repository: cr.yandex/crpvpcj1bo0olehbfgsr/library
+  tag: v2
+
+service:
+  port: 8060
+  targetPort: 8060
+
+env:
+  - name: LIBRARIES_DB_URL
+    value: "postgres://program:test@postgres.db.svc.cluster.local:5432/librarydb?sslmode=disable"
+  - name: DB_URL
+    value: "postgres://program:test@postgres.db.svc.cluster.local:5432/librarydb?sslmode=disable"
+  - name: IDENTITY_SERVICE_URL
+    value: "http://identity:8090"
+  - name: KAFKA_BROKERS
+    value: "kafka.messaging.svc.cluster.local:9092"
+  - name: KAFKA_TOPIC
+    value: "library-events"
+
+livenessProbe:
+  enabled: true
+  path: /manage/health
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  enabled: true
+  path: /manage/health
+  initialDelaySeconds: 5
+  periodSeconds: 5
